@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
+
 set -e
 
-wuhu_dir="$PWD/wuhu-terragon"
-git clone https://github.com/paideia-ai/wuhu "$wuhu_dir"
-bash "$wuhu_dir/terragon-setup.sh"
+# go to the folder where this script lives
+cd "$(dirname "$0")"
+cd ..
+git clone https://github.com/paideia-ai/wuhu.git wuhu-terragon
+cd wuhu-terragon
+./terragon-setup.sh
