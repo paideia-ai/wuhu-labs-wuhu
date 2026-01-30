@@ -2,6 +2,12 @@
 
 set -e
 
+# Install Deno if not present
+if ! command -v deno &> /dev/null; then
+  curl -fsSL https://deno.land/install.sh | sh
+  export PATH="$HOME/.deno/bin:$PATH"
+fi
+
 # go to the folder where this script lives
 cd "$(dirname "$0")"
 cd ..
