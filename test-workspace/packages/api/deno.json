@@ -1,8 +1,5 @@
 {
   "name": "@test/api",
   "version": "1.0.0",
-  "exports": "./mod.ts",
-  "imports": {
-    "@test/core": "jsr:@test/core"
-  }
+  "exports": "./mod.ts"
 }

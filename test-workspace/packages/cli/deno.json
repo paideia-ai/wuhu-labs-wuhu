@@ -1,8 +1,5 @@
 {
   "name": "@test/cli",
   "version": "1.0.0",
-  "exports": "./mod.ts",
-  "imports": {
-    "@test/api": "jsr:@test/api"
-  }
+  "exports": "./mod.ts"
 }
