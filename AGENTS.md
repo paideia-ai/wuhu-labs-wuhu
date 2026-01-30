@@ -44,7 +44,7 @@ Wuhu principles:
 ## Reference Projects
 
 ### Axiia Website (`../axiia-website`)
-Personal project (paideia-ai/axiia-website). Reference for code patterns and approaches. Cloned by `terragon-setup.sh`.
+Personal project (paideia-ai/axiia-website). Bun monorepo with Elysia server, React Router SSR, service registry pattern, and domain API layering. Useful patterns for API design, DI, and config management. See `notes/axiia-website.md` for details.
 
 ## Notes
 
