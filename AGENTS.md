@@ -6,15 +6,15 @@ Wuhu is a data layer + API for understanding coding agents. Not a task runner - 
 
 Core value: collect logs from Claude Code, Codex, OpenCode, etc. Provide APIs so agents can query them. Git blame a line → find the session → understand the why.
 
-See `/root/repo/notes/architecture-vibe.md` for full architecture discussion.
+See `notes/architecture-vibe.md` for full architecture discussion.
 
 ## Development Environment
 
 You're running in a self-hosted Terragon instance. The original Terragon product is dead - no commercial future, no data retrieval from the old hosted version.
 
 **Important paths:**
-- `/root/repo` - Wuhu repo (this repo)
-- `/root/wuhu-terragon` - Terragon source code, always available
+- `.` - Wuhu repo (this repo)
+- `../wuhu-terragon` - Terragon source code, always available
 
 The `terragon-setup.sh` script clones Terragon and runs `pnpm install`. This runs before your environment starts.
 
@@ -42,6 +42,6 @@ Wuhu principles:
 
 ## Notes
 
-Architecture discussions live in `/root/repo/notes/`:
+Architecture discussions live in `notes/`:
 - `architecture-vibe.md` - overall system design
 - `session-logs-component.md` - first component spec
