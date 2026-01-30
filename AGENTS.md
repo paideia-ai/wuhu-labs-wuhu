@@ -15,6 +15,7 @@ You're running in a self-hosted Terragon instance. The original Terragon product
 **Important paths:**
 - `.` - Wuhu repo (this repo)
 - `../wuhu-terragon` - Terragon source code, always available
+- `../axiia-website` - Personal project with useful code patterns
 
 The `terragon-setup.sh` script clones Terragon and runs `pnpm install`. This runs before your environment starts.
 
@@ -40,8 +41,14 @@ Wuhu principles:
 - GitHub-optional (mock locally, polling for no-domain setups)
 - Infrastructure-agnostic contracts
 
+## Reference Projects
+
+### Axiia Website (`../axiia-website`)
+Personal project (paideia-ai/axiia-website). Bun monorepo with Elysia server, React Router SSR, service registry pattern, and domain API layering. Useful patterns for API design, DI, and config management. See `notes/axiia-website.md` for details.
+
 ## Notes
 
 Architecture discussions live in `notes/`:
 - `architecture-vibe.md` - overall system design
 - `session-logs-component.md` - first component spec
+- `axiia-website.md` - reference project notes
