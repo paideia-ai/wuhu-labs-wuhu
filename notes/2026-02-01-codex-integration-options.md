@@ -65,6 +65,23 @@ Implications:
 - This is the cleanest “product-grade” integration boundary: you can treat `codex` as a daemon process and drive it from your own UI/service.
 - You get a richer, more structured event model than `exec` JSONL today (deltas, approvals, terminal interactions, better item types).
 
+#### How “well typed” is app-server?
+
+Very well typed (by the standards of a local-process JSON protocol):
+- The protocol is defined as Rust enums/structs (not “stringly typed” JSON blobs) and is organized around discriminated unions:
+  - `codex-rs/app-server-protocol/src/protocol/common.rs` generates a tagged `ClientRequest` enum (tagged by `method`) with concrete `params` + `response` types per method, and also defines typed `ServerRequest` / `ServerNotification` enums.
+  - `codex-rs/app-server-protocol/src/protocol/v2.rs` defines the v2 “domain model” for Thread/Turn/Item plus all the delta notifications and approval request/response shapes.
+- There is a first-class type export path:
+  - Many protocol types derive `ts_rs::TS` and `schemars::JsonSchema`.
+  - The `codex app-server generate-ts` / `generate-json-schema` commands generate artifacts that match the specific Codex binary version you run.
+
+“Untyped islands” still exist where they have to:
+- Tool arguments/results and schema-driven outputs are represented as `serde_json::Value` / `JsonValue` in various places, because they’re inherently dynamic (user-defined tool schemas, model tool calls, JSON-schema constrained outputs).
+
+#### Is the VS Code extension source in this repo?
+
+No. This repo contains the `codex app-server` protocol + implementation that powers the VS Code extension, but not the extension’s source itself.
+
 ## Your specific concerns
 
 ### Streaming input (the “Claude Code style” feature)
@@ -149,4 +166,3 @@ If Wuhu intends to *run Codex* (or simulate Codex UI surfaces) in any meaningful
 
 If Wuhu intends to *primarily ingest/understand sessions created by developers running Codex themselves*:
 - Still prefer `app-server` for ingestion: it can `thread/list` and `thread/resume` and stream canonical `item/*` events in a stable shape, instead of reverse-engineering Codex’s local storage format.
-
