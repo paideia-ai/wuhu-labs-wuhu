@@ -1,0 +1,7 @@
+{
+  "name": "ask-user-timeout-experiment",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest"
+  }
+}
