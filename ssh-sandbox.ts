@@ -1,82 +1,100 @@
 import { ModalClient } from "modal";
+import { mkdirSync } from "fs";
 
 const tokenId = process.env.MODAL_TOKEN_ID?.trim();
 const tokenSecret = process.env.MODAL_TOKEN_SECRET?.trim();
 
 if (!tokenId || !tokenSecret) {
-  throw new Error(
-    "MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables must be set"
-  );
+  throw new Error("MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables must be set");
 }
 
 const modal = new ModalClient({ tokenId, tokenSecret });
 
-const app = await modal.apps.fromName("ssh-sandbox", {
-  createIfMissing: true,
-});
+// Generate SSH key pair
+console.log("Generating temporary SSH key pair...\n");
+mkdirSync("/tmp/modal-ssh", { recursive: true });
 
-// Use a more feature-rich image
-const image = modal.images.fromRegistry("ubuntu:22.04");
+Bun.spawnSync(["rm", "-f", "/tmp/modal-ssh/id_ed25519", "/tmp/modal-ssh/id_ed25519.pub"]);
+Bun.spawnSync([
+  "ssh-keygen", "-t", "ed25519",
+  "-f", "/tmp/modal-ssh/id_ed25519",
+  "-N", "",
+  "-C", "modal-sandbox",
+], { stdout: "pipe", stderr: "pipe" });
 
-console.log("Creating sandbox with Ubuntu 22.04...");
-console.log("Setting idle timeout to 1 hour...\n");
+const privateKey = await Bun.file("/tmp/modal-ssh/id_ed25519").text();
+const publicKey = (await Bun.file("/tmp/modal-ssh/id_ed25519.pub").text()).trim();
+
+console.log("=== PRIVATE KEY ===\n");
+console.log(privateKey);
+console.log("=== END PRIVATE KEY ===\n");
+
+const app = await modal.apps.fromName("ssh-sandbox", { createIfMissing: true });
+const image = modal.images.fromRegistry("alpine:3.21");
+
+console.log("Creating sandbox...");
 
 const sb = await modal.sandboxes.create(app, image, {
   command: ["sleep", "infinity"],
+  unencryptedPorts: [22],
   idleTimeoutMs: 3600000,
   timeoutMs: 7200000,
 });
 
-console.log("Sandbox created!");
-console.log("  Sandbox ID:", sb.sandboxId);
+console.log("Sandbox ID:", sb.sandboxId);
+console.log("\nSetting up SSH...");
 
-console.log("\nInstalling packages and setting up environment...");
-
-// Install useful tools
-const setupCommands = [
-  ["apt-get", "update"],
-  ["apt-get", "install", "-y", "curl", "vim", "git", "htop", "net-tools", "python3", "python3-pip"],
+// Install and configure
+const cmds = [
+  ["apk", "add", "--no-cache", "openssh"],
+  ["ssh-keygen", "-A"],
+  ["adduser", "-D", "-s", "/bin/ash", "user"],
+  ["passwd", "-u", "user"],  // Unlock account
+  ["mkdir", "-p", "/home/user/.ssh"],
+  ["chmod", "700", "/home/user/.ssh"],
 ];
-
-for (const cmd of setupCommands) {
-  console.log(`  Running: ${cmd.slice(0, 3).join(" ")}...`);
-  const proc = await sb.exec(cmd);
-  await proc.wait();
+for (const cmd of cmds) {
+  const p = await sb.exec(cmd);
+  await p.wait();
 }
 
-console.log("\n╔══════════════════════════════════════════════════════════════════╗");
-console.log("║                         SANDBOX READY                              ║");
-console.log("╠══════════════════════════════════════════════════════════════════╣");
-console.log(`║  Sandbox ID: ${sb.sandboxId}`);
-console.log("║                                                                    ║");
-console.log("║  Since Modal tunnels are HTTPS-only (not raw TCP), SSH won't      ║");
-console.log("║  work directly. But you can use the Modal CLI to connect:         ║");
-console.log("║                                                                    ║");
-console.log("║  Option 1 - Modal CLI (if installed):                             ║");
-console.log(`║    modal sandbox exec ${sb.sandboxId} /bin/bash`);
-console.log("║                                                                    ║");
-console.log("║  Option 2 - Use this script interactively (see shell-sandbox.ts)  ║");
-console.log("║                                                                    ║");
-console.log("║  The sandbox has: curl, vim, git, htop, python3, pip              ║");
-console.log("╚══════════════════════════════════════════════════════════════════╝");
+// Write key using stdin to avoid shell escaping issues
+const writeKey = await sb.exec(["tee", "/home/user/.ssh/authorized_keys"]);
+await writeKey.stdin.writeText(publicKey);
+await writeKey.stdin.close();
+await writeKey.wait();
 
-// Let's demonstrate running some commands
-console.log("\n=== Quick demo - running some commands ===\n");
-
-const demoCommands = [
-  { cmd: ["uname", "-a"], desc: "System info" },
-  { cmd: ["cat", "/etc/os-release"], desc: "OS release" },
-  { cmd: ["df", "-h"], desc: "Disk space" },
+// Fix perms and start sshd
+const cmds2 = [
+  ["chmod", "600", "/home/user/.ssh/authorized_keys"],
+  ["chown", "-R", "user:user", "/home/user/.ssh"],
 ];
-
-for (const { cmd, desc } of demoCommands) {
-  console.log(`--- ${desc} ---`);
-  const proc = await sb.exec(cmd);
-  const output = await proc.stdout.readText();
-  console.log(output);
+for (const cmd of cmds2) {
+  const p = await sb.exec(cmd);
+  await p.wait();
 }
 
-console.log("=== Sandbox is running ===");
-console.log("Will auto-terminate after 1 hour of inactivity.");
+// Start sshd
+console.log("Starting sshd...");
+await sb.exec(["/usr/sbin/sshd", "-D", "-e"]);
+await new Promise(r => setTimeout(r, 2000));
+
+// Get tunnel info
+const tunnels = await sb.tunnels();
+const tunnel = tunnels[22];
+
+console.log("\n========================================");
+console.log("SSH SANDBOX READY");
+console.log("========================================\n");
+
+if (tunnel) {
+  console.log("Connect with:");
+  console.log(`  ssh -i /tmp/modal-ssh/id_ed25519 -p ${tunnel.unencryptedPort} user@${tunnel.unencryptedHost}`);
+  console.log("\nOr with options:");
+  console.log(`  ssh -i /tmp/modal-ssh/id_ed25519 -p ${tunnel.unencryptedPort} -o StrictHostKeyChecking=no user@${tunnel.unencryptedHost}`);
+}
+
+console.log("\nSandbox ID:", sb.sandboxId);
+console.log("Idle timeout: 1 hour");
 
 process.exit(0);
