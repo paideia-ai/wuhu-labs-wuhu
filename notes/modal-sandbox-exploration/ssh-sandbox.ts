@@ -1,14 +1,16 @@
+/**
+ * SSH Sandbox Example
+ *
+ * Creates an Alpine sandbox with SSH server accessible via raw TCP tunnel.
+ * Generates a temporary key pair for authentication.
+ */
 import { ModalClient } from "modal";
 import { mkdirSync } from "fs";
 
-const tokenId = process.env.MODAL_TOKEN_ID?.trim();
-const tokenSecret = process.env.MODAL_TOKEN_SECRET?.trim();
-
-if (!tokenId || !tokenSecret) {
-  throw new Error("MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables must be set");
-}
-
-const modal = new ModalClient({ tokenId, tokenSecret });
+const modal = new ModalClient({
+  tokenId: process.env.MODAL_TOKEN_ID,
+  tokenSecret: process.env.MODAL_TOKEN_SECRET,
+});
 
 // Generate SSH key pair
 console.log("Generating temporary SSH key pair...\n");
@@ -36,7 +38,7 @@ console.log("Creating sandbox...");
 
 const sb = await modal.sandboxes.create(app, image, {
   command: ["sleep", "infinity"],
-  unencryptedPorts: [22],
+  unencryptedPorts: [22],  // Raw TCP for SSH
   idleTimeoutMs: 3600000,
   timeoutMs: 7200000,
 });
@@ -49,7 +51,7 @@ const cmds = [
   ["apk", "add", "--no-cache", "openssh"],
   ["ssh-keygen", "-A"],
   ["adduser", "-D", "-s", "/bin/ash", "user"],
-  ["passwd", "-u", "user"],  // Unlock account
+  ["passwd", "-u", "user"],  // Unlock account (Alpine locks by default)
   ["mkdir", "-p", "/home/user/.ssh"],
   ["chmod", "700", "/home/user/.ssh"],
 ];
@@ -64,7 +66,7 @@ await writeKey.stdin.writeText(publicKey);
 await writeKey.stdin.close();
 await writeKey.wait();
 
-// Fix perms and start sshd
+// Fix perms
 const cmds2 = [
   ["chmod", "600", "/home/user/.ssh/authorized_keys"],
   ["chown", "-R", "user:user", "/home/user/.ssh"],
@@ -74,7 +76,7 @@ for (const cmd of cmds2) {
   await p.wait();
 }
 
-// Start sshd
+// Start sshd (don't await - runs in background)
 console.log("Starting sshd...");
 await sb.exec(["/usr/sbin/sshd", "-D", "-e"]);
 await new Promise(r => setTimeout(r, 2000));
@@ -90,8 +92,6 @@ console.log("========================================\n");
 if (tunnel) {
   console.log("Connect with:");
   console.log(`  ssh -i /tmp/modal-ssh/id_ed25519 -p ${tunnel.unencryptedPort} user@${tunnel.unencryptedHost}`);
-  console.log("\nOr with options:");
-  console.log(`  ssh -i /tmp/modal-ssh/id_ed25519 -p ${tunnel.unencryptedPort} -o StrictHostKeyChecking=no user@${tunnel.unencryptedHost}`);
 }
 
 console.log("\nSandbox ID:", sb.sandboxId);
