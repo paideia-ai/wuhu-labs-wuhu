@@ -22,7 +22,9 @@
 | 120s      | ✅      | No        | 136.9s          |
 | **300s**  | ✅      | No        | **318.1s**      |
 
-### Permission Request (Bash) Results
+### Permission Request (Bash via canUseTool) - FLAWED
+
+Initial tests using `canUseTool` callback:
 
 | Wait Time | Success | Timed Out | Actual Duration |
 |-----------|---------|-----------|-----------------|
@@ -32,13 +34,26 @@
 | 120s      | ✅      | No        | 14.6s           |
 | 300s      | ✅      | No        | 14.8s           |
 
+**Problem**: The `canUseTool` callback was never invoked! The environment auto-allowed Bash without prompting (possibly due to global settings or running as root).
+
+### Permission Request (Bash via PreToolUse Hook) - WORKING
+
+Re-tested using `PreToolUse` hook which always gets invoked:
+
+| Wait Time | Hook Invoked | Success | Timed Out | Actual Duration |
+|-----------|--------------|---------|-----------|-----------------|
+| 30s       | ✅ YES       | ✅      | No        | 37.0s           |
+| **80s**   | ✅ YES       | ✅      | No        | **87.5s**       |
+
+**This confirms**: Even tool permission hooks have no 60-second timeout!
+
 ### Key Observations
 
 1. **AskUserQuestion**: All tests succeeded, even at 300s (5 minutes)! The callback waited the full duration before returning.
 
-2. **Permission Request (Bash)**: Interesting! All tests completed in ~15 seconds regardless of wait time. This suggests **the callback was never invoked** - likely because the model decided not to use Bash or used a different approach.
+2. **Permission Request (PreToolUse hook)**: Both 30s and 80s tests succeeded. The 80s test proves there is NO 60-second timeout for hooks either.
 
-3. **No 60-second timeout observed** for either tool type in any test.
+3. **No 60-second timeout observed** for ANY callback type in any test.
 
 ---
 
