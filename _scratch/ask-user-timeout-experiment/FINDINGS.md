@@ -1,7 +1,48 @@
-# AskUserQuestion 60-Second Timeout Experiment
+# canUseTool Timeout Matrix Experiment
 
 **Date**: 2026-02-01
 **Environment**: Claude Agent SDK 0.2.29, Claude Code 2.0.65
+
+---
+
+## Matrix Experiment Results
+
+### Dimensions Tested
+- **Tool Types**: AskUserQuestion, Permission Request (Bash)
+- **Wait Times**: 30s, 60s, 90s, 120s, 300s (5 min)
+- **Total Tests**: 10 (run in parallel)
+
+### AskUserQuestion Results
+
+| Wait Time | Success | Timed Out | Actual Duration |
+|-----------|---------|-----------|-----------------|
+| 30s       | ✅      | No        | 47.0s           |
+| 60s       | ✅      | No        | 78.3s           |
+| 90s       | ✅      | No        | 106.8s          |
+| 120s      | ✅      | No        | 136.9s          |
+| **300s**  | ✅      | No        | **318.1s**      |
+
+### Permission Request (Bash) Results
+
+| Wait Time | Success | Timed Out | Actual Duration |
+|-----------|---------|-----------|-----------------|
+| 30s       | ✅      | No        | 14.9s           |
+| 60s       | ✅      | No        | 14.9s           |
+| 90s       | ✅      | No        | 14.5s           |
+| 120s      | ✅      | No        | 14.6s           |
+| 300s      | ✅      | No        | 14.8s           |
+
+### Key Observations
+
+1. **AskUserQuestion**: All tests succeeded, even at 300s (5 minutes)! The callback waited the full duration before returning.
+
+2. **Permission Request (Bash)**: Interesting! All tests completed in ~15 seconds regardless of wait time. This suggests **the callback was never invoked** - likely because the model decided not to use Bash or used a different approach.
+
+3. **No 60-second timeout observed** for either tool type in any test.
+
+---
+
+## Original Single-Test Experiment
 
 ## Hypothesis
 
