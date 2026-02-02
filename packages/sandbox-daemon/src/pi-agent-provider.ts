@@ -12,9 +12,22 @@ export interface PiTransport {
   onLine(handler: (line: string) => void): () => void
 }
 
-class ProcessPiTransport implements PiTransport {
+export interface ProcessPiTransportOptions {
+  command?: string
+  args?: string[]
+  cwd?: string
+  /**
+   * Environment overrides passed to the Pi process.
+   * Only the provided keys are set/overridden; other env vars are inherited.
+   */
+  env?: Record<string, string>
+}
+
+export class ProcessPiTransport implements PiTransport {
   #command: string
   #args: string[]
+  #cwd?: string
+  #env?: Record<string, string>
   #child?: Deno.ChildProcess
   #writer?: WritableStreamDefaultWriter<Uint8Array>
   #handlers = new Set<(line: string) => void>()
@@ -24,17 +37,22 @@ class ProcessPiTransport implements PiTransport {
   constructor(
     command = 'pi',
     args: string[] = ['--mode', 'rpc', '--no-session'],
+    options: Omit<ProcessPiTransportOptions, 'command' | 'args'> = {},
   ) {
     this.#command = command
     this.#args = args
+    this.#cwd = options.cwd
+    this.#env = options.env
   }
 
-  async start(): Promise<void> {
+  start(): Promise<void> {
     if (this.#child) {
-      return
+      return Promise.resolve()
     }
     const cmd = new Deno.Command(this.#command, {
       args: this.#args,
+      cwd: this.#cwd,
+      env: this.#env,
       stdin: 'piped',
       stdout: 'piped',
       stderr: 'inherit',
@@ -68,6 +86,7 @@ class ProcessPiTransport implements PiTransport {
         reader.releaseLock()
       }
     })()
+    return Promise.resolve()
   }
 
   async send(line: string): Promise<void> {
@@ -104,6 +123,10 @@ class ProcessPiTransport implements PiTransport {
 
 export interface PiAgentProviderOptions {
   transport?: PiTransport
+  command?: string
+  args?: string[]
+  cwd?: string
+  env?: Record<string, string>
 }
 
 export class PiAgentProvider implements AgentProvider {
@@ -111,7 +134,13 @@ export class PiAgentProvider implements AgentProvider {
   #handlers = new Set<(event: SandboxDaemonAgentEvent) => void>()
 
   constructor(options: PiAgentProviderOptions = {}) {
-    this.#transport = options.transport ?? new ProcessPiTransport()
+    const transport = options.transport ??
+      new ProcessPiTransport(
+        options.command,
+        options.args,
+        { cwd: options.cwd, env: options.env },
+      )
+    this.#transport = transport
   }
 
   async start(): Promise<void> {

@@ -18,20 +18,24 @@ export class FakeAgentProvider implements AgentProvider {
   readonly prompts: SandboxDaemonPromptRequest[] = []
   abortCalls = 0
 
-  async start(): Promise<void> {
+  start(): Promise<void> {
     // No-op for fake implementation
+    return Promise.resolve()
   }
 
-  async stop(): Promise<void> {
+  stop(): Promise<void> {
     this.handlers.clear()
+    return Promise.resolve()
   }
 
-  async sendPrompt(request: SandboxDaemonPromptRequest): Promise<void> {
+  sendPrompt(request: SandboxDaemonPromptRequest): Promise<void> {
     this.prompts.push(request)
+    return Promise.resolve()
   }
 
-  async abort(_request?: SandboxDaemonAbortRequest): Promise<void> {
+  abort(_request?: SandboxDaemonAbortRequest): Promise<void> {
     this.abortCalls++
+    return Promise.resolve()
   }
 
   onEvent(handler: (event: SandboxDaemonAgentEvent) => void): () => void {

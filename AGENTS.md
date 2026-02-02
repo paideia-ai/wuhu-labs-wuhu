@@ -15,6 +15,13 @@ See `notes/architecture-vibe.md` for full architecture discussion.
 You're running in a self-hosted Terragon instance. The original Terragon product
 is dead - no commercial future, no data retrieval from the old hosted version.
 
+## Repo Tasks (Deno)
+
+- Verify (typecheck/lint + tests): `deno task verify`
+- Coverage report: `deno task coverage`
+- Coverage gate (fails below minimum): `deno task coverage:check`
+  - Override threshold: `COVERAGE_MIN=0.7 deno task coverage:check`
+
 **Important paths:**
 
 - `.` - Wuhu repo (this repo)
