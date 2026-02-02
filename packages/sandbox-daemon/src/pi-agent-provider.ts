@@ -21,7 +21,10 @@ class ProcessPiTransport implements PiTransport {
   #encoder = new TextEncoder()
   #decoder = new TextDecoder()
 
-  constructor(command = 'pi', args: string[] = ['--mode', 'rpc', '--no-session']) {
+  constructor(
+    command = 'pi',
+    args: string[] = ['--mode', 'rpc', '--no-session'],
+  ) {
     this.#command = command
     this.#args = args
   }

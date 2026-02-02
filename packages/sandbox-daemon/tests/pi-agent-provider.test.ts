@@ -1,9 +1,6 @@
 import { assertEquals } from '@std/assert'
 
-import {
-  PiAgentProvider,
-  type PiTransport,
-} from '../src/pi-agent-provider.ts'
+import { PiAgentProvider, type PiTransport } from '../src/pi-agent-provider.ts'
 import type { SandboxDaemonAgentEvent } from '../src/types.ts'
 
 class FakePiTransport implements PiTransport {
@@ -80,4 +77,3 @@ Deno.test('PiAgentProvider emits agent events for non-response lines', async () 
   assertEquals(event.type, 'message_update')
   assertEquals(event.payload.text, 'hi')
 })
-

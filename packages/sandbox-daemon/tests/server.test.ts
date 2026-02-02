@@ -58,7 +58,9 @@ Deno.test('GET /stream returns SSE with agent events from cursor', async () => {
   assertEquals(dataLines.length, 1)
 
   const jsonStr = dataLines[0].slice('data: '.length)
-  const envelope = JSON.parse(jsonStr) as SandboxDaemonStreamEnvelope<SandboxDaemonAgentEvent>
+  const envelope = JSON.parse(jsonStr) as SandboxDaemonStreamEnvelope<
+    SandboxDaemonAgentEvent
+  >
 
   assertEquals(envelope.cursor, 1)
   assertEquals(envelope.event.source, 'agent')
