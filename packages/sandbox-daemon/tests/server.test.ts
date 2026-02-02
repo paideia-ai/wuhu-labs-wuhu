@@ -113,13 +113,39 @@ Deno.test('POST /credentials rejects malformed JSON', async () => {
 
 Deno.test('POST /init echoes repo summaries', async () => {
   const provider = new FakeAgentProvider()
-  const { app } = createSandboxDaemonApp({ provider })
+  const tmp = await Deno.makeTempDir()
+
+  const runGit = async (cwd: string, args: string[]) => {
+    const cmd = new Deno.Command('git', {
+      args,
+      cwd,
+      stdin: 'null',
+      stdout: 'piped',
+      stderr: 'piped',
+    })
+    const out = await cmd.output()
+    if (!out.success) {
+      throw new Error(new TextDecoder().decode(out.stderr))
+    }
+    return new TextDecoder().decode(out.stdout)
+  }
+
+  const sourceRepo = `${tmp}/source`
+  const workspaceRoot = `${tmp}/ws`
+  await Deno.mkdir(sourceRepo, { recursive: true })
+  await runGit(sourceRepo, ['init', '-b', 'main'])
+  await runGit(sourceRepo, ['config', 'user.email', 'test@example.com'])
+  await runGit(sourceRepo, ['config', 'user.name', 'Test'])
+  await Deno.writeTextFile(`${sourceRepo}/README.md`, 'hello')
+  await runGit(sourceRepo, ['add', '.'])
+  await runGit(sourceRepo, ['commit', '-m', 'init'])
+
+  const { app } = createSandboxDaemonApp({ provider, workspaceRoot })
 
   const payload: SandboxDaemonInitRequest = {
     workspace: {
       repos: [
-        { id: 'repo-a', source: 'github:me/repo-a', path: 'repo-a' },
-        { id: 'repo-b', source: 'github:me/repo-b', path: 'repo-b' },
+        { id: 'repo-a', source: sourceRepo, path: 'repo-a' },
       ],
     },
   }
@@ -133,7 +159,8 @@ Deno.test('POST /init echoes repo summaries', async () => {
   assertEquals(res.status, 200)
   const json = await res.json()
   assertEquals(json.ok, true)
-  assertEquals(json.workspace.repos.length, 2)
+  assertEquals(json.workspace.repos.length, 1)
   assertEquals(json.workspace.repos[0].id, 'repo-a')
   assertEquals(json.workspace.repos[0].path, 'repo-a')
+  assertEquals(json.workspace.repos[0].currentBranch, 'main')
 })

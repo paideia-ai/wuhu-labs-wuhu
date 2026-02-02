@@ -3,24 +3,8 @@ import { FakeAgentProvider } from './src/agent-provider.ts'
 import { PiAgentProvider } from './src/pi-agent-provider.ts'
 import { InMemoryCredentialsStore } from './src/credentials.ts'
 import { LazyAgentProvider } from './src/lazy-agent-provider.ts'
-import { readEnvNumber, readEnvString, readEnvTrimmed } from './src/env.ts'
-
-function parseArgsEnv(raw: string | undefined): string[] | undefined {
-  if (!raw) return undefined
-  const trimmed = raw.trim()
-  if (!trimmed) return undefined
-  if (trimmed.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(trimmed)
-      if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'string')) {
-        return parsed
-      }
-    } catch {
-      // Fall through to whitespace split.
-    }
-  }
-  return trimmed.split(/\s+/g).filter(Boolean)
-}
+import { loadSandboxDaemonConfig } from './src/config.ts'
+import { readEnvTrimmed } from './src/env.ts'
 
 function fileExists(path: string): boolean {
   try {
@@ -44,17 +28,17 @@ function findOnPath(command: string): string | undefined {
   return undefined
 }
 
-function resolvePiInvocation(): { command: string; args?: string[] } {
-  const explicitCommand = readEnvTrimmed('SANDBOX_DAEMON_PI_COMMAND')
-  const explicitArgs = parseArgsEnv(readEnvTrimmed('SANDBOX_DAEMON_PI_ARGS'))
-
-  if (explicitCommand) {
-    return { command: explicitCommand, args: explicitArgs }
+function resolvePiInvocation(config: { command?: string; args?: string[] }): {
+  command: string
+  args?: string[]
+} {
+  if (config.command) {
+    return { command: config.command, args: config.args }
   }
 
   const onPath = findOnPath('pi')
   if (onPath) {
-    return { command: 'pi', args: explicitArgs }
+    return { command: 'pi', args: config.args }
   }
 
   // Developer fallback: run a locally-built pi CLI from ../pi-mono if present.
@@ -66,16 +50,17 @@ function resolvePiInvocation(): { command: string; args?: string[] } {
   if (fileExists(localPath)) {
     return {
       command: 'node',
-      args: [localPath, ...(explicitArgs ?? ['--mode', 'rpc', '--no-session'])],
+      args: [localPath, ...(config.args ?? ['--mode', 'rpc', '--no-session'])],
     }
   }
 
-  return { command: 'pi', args: explicitArgs }
+  return { command: 'pi', args: config.args }
 }
 
-const hostname = readEnvString('SANDBOX_DAEMON_HOST', '127.0.0.1')
-const port = readEnvNumber('SANDBOX_DAEMON_PORT', 8787)
-const agentMode = readEnvString('SANDBOX_DAEMON_AGENT_MODE', 'pi-rpc')
+const config = loadSandboxDaemonConfig()
+const hostname = config.host
+const port = config.port
+const agentMode = config.agentMode
 
 const credentials = new InMemoryCredentialsStore()
 
@@ -99,8 +84,8 @@ const provider = agentMode === 'mock'
     getRevision: () => credentials.get().revision,
     create: () => {
       const snapshot = credentials.get()
-      const { command, args } = resolvePiInvocation()
-      const cwd = readEnvTrimmed('SANDBOX_DAEMON_PI_CWD')
+      const { command, args } = resolvePiInvocation(config.pi)
+      const cwd = config.pi.cwd
       return new PiAgentProvider({
         command,
         args,
@@ -116,6 +101,10 @@ const { app } = createSandboxDaemonApp({
     credentials.set(payload)
     await provider.start()
   },
+  auth: config.jwt.enabled
+    ? { secret: config.jwt.secret, issuer: config.jwt.issuer, enabled: true }
+    : { enabled: false },
+  workspaceRoot: config.workspaceRoot,
 })
 
 try {
