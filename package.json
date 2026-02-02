@@ -1,0 +1,10 @@
+{
+  "name": "wuhu",
+  "private": true,
+  "dependencies": {
+    "modal": "0.6.1"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "1.12.6"
+  }
+}

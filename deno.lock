@@ -317,9 +317,13 @@
       },
       "packages/tasks": {
         "dependencies": [
-          "jsr:@std/path@1",
-          "npm:modal@0.6.1"
-        ]
+          "jsr:@std/path@1"
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:modal@0.6.1"
+          ]
+        }
       }
     }
   }
