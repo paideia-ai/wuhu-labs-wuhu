@@ -43,7 +43,14 @@ export interface SandboxDaemonServerOptions {
   provider: AgentProvider
 }
 
-export function createSandboxDaemonApp(options: SandboxDaemonServerOptions) {
+export interface SandboxDaemonAppResult {
+  app: Hono
+  eventStore: InMemoryEventStore
+}
+
+export function createSandboxDaemonApp(
+  options: SandboxDaemonServerOptions,
+): SandboxDaemonAppResult {
   const { provider } = options
   const app = new Hono()
   const eventStore = new InMemoryEventStore()

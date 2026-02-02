@@ -15,6 +15,7 @@ export interface PiTransport {
 class ProcessPiTransport implements PiTransport {
   #command: string
   #args: string[]
+  #env?: Record<string, string>
   #child?: Deno.ChildProcess
   #writer?: WritableStreamDefaultWriter<Uint8Array>
   #handlers = new Set<(line: string) => void>()
@@ -24,20 +25,23 @@ class ProcessPiTransport implements PiTransport {
   constructor(
     command = 'pi',
     args: string[] = ['--mode', 'rpc', '--no-session'],
+    env?: Record<string, string>,
   ) {
     this.#command = command
     this.#args = args
+    this.#env = env
   }
 
-  async start(): Promise<void> {
+  start(): Promise<void> {
     if (this.#child) {
-      return
+      return Promise.resolve()
     }
     const cmd = new Deno.Command(this.#command, {
       args: this.#args,
       stdin: 'piped',
       stdout: 'piped',
       stderr: 'inherit',
+      env: this.#env ? { ...Deno.env.toObject(), ...this.#env } : undefined,
     })
     const child = cmd.spawn()
     this.#child = child
@@ -46,7 +50,8 @@ class ProcessPiTransport implements PiTransport {
     const reader = child.stdout.getReader()
 
     let buffer = ''
-    ;(async () => {
+    // Start reading stdout in the background (intentionally not awaited)
+    void (async () => {
       try {
         while (true) {
           const { value, done } = await reader.read()
@@ -68,6 +73,7 @@ class ProcessPiTransport implements PiTransport {
         reader.releaseLock()
       }
     })()
+    return Promise.resolve()
   }
 
   async send(line: string): Promise<void> {
@@ -104,6 +110,9 @@ class ProcessPiTransport implements PiTransport {
 
 export interface PiAgentProviderOptions {
   transport?: PiTransport
+  piCommand?: string
+  piArgs?: string[]
+  env?: Record<string, string>
 }
 
 export class PiAgentProvider implements AgentProvider {
@@ -111,7 +120,12 @@ export class PiAgentProvider implements AgentProvider {
   #handlers = new Set<(event: SandboxDaemonAgentEvent) => void>()
 
   constructor(options: PiAgentProviderOptions = {}) {
-    this.#transport = options.transport ?? new ProcessPiTransport()
+    this.#transport = options.transport ??
+      new ProcessPiTransport(
+        options.piCommand ?? 'pi',
+        options.piArgs ?? ['--mode', 'rpc', '--no-session'],
+        options.env,
+      )
   }
 
   async start(): Promise<void> {
