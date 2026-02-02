@@ -47,6 +47,7 @@ function extractMessageParts(message) {
     return parts
   }
   if (Array.isArray(content)) {
+    const toolCallById = new Map()
     for (const item of content) {
       if (!item || typeof item !== 'object') continue
       if (item.type === 'text' && typeof item.text === 'string') {
@@ -56,8 +57,16 @@ function extractMessageParts(message) {
         parts.thinking += item.thinking
       }
       if (item.type === 'toolCall') {
-        parts.toolCalls.push(item)
+        const id = typeof item.id === 'string' ? item.id : ''
+        if (id) {
+          toolCallById.set(id, item)
+        } else {
+          parts.toolCalls.push(item)
+        }
       }
+    }
+    if (toolCallById.size) {
+      parts.toolCalls.push(...toolCallById.values())
     }
   }
   return parts
@@ -250,6 +259,28 @@ export default function App() {
     })
   }
 
+  const finalizeStreamingAssistant = () => {
+    const id = streamingAssistantRef.current
+    if (!id) return
+    streamingAssistantRef.current = null
+
+    setMessages((prev) => {
+      const next = [...prev]
+      const idx = next.findIndex((item) => item.id === id)
+      if (idx === -1) return prev
+      const message = next[idx]
+      const empty = !String(message.text || '').trim() &&
+        !String(message.thinking || '').trim() &&
+        (!message.toolCalls || message.toolCalls.length === 0)
+      if (empty) {
+        next.splice(idx, 1)
+        return next
+      }
+      next[idx] = { ...message, status: 'complete' }
+      return next
+    })
+  }
+
   const reconcileUserMessage = (text, timestamp) => {
     setMessages((prev) => {
       const next = [...prev]
@@ -326,14 +357,28 @@ export default function App() {
     }
 
     if (role === 'toolResult') {
-      appendMessage({
-        id: createMessageId(),
+      if (phase !== 'message_end') return
+      const toolCallId = typeof message.toolCallId === 'string'
+        ? message.toolCallId
+        : ''
+      const toolMessageId = toolCallId ? `tool-${toolCallId}` : createMessageId()
+      const updates = {
+        id: toolMessageId,
         role: 'tool',
         title: message.toolName || 'Tool result',
         text: text || '',
         timestamp: formatTimestamp(timestamp),
         status: message.isError ? 'error' : 'complete',
         toolName: message.toolName,
+      }
+      setMessages((prev) => {
+        const next = [...prev]
+        const idx = next.findIndex((item) => item.id === toolMessageId)
+        if (idx === -1) {
+          return [...next, updates]
+        }
+        next[idx] = { ...next[idx], ...updates }
+        return next
       })
       return
     }
@@ -388,7 +433,7 @@ export default function App() {
 
     switch (event.type) {
       case 'turn_start':
-        streamingAssistantRef.current = null
+        finalizeStreamingAssistant()
         return
       case 'message_start':
       case 'message_update':
@@ -409,7 +454,7 @@ export default function App() {
         )
         return
       case 'agent_end':
-        streamingAssistantRef.current = null
+        finalizeStreamingAssistant()
         setAgentStatus('Idle')
         if (messageCountRef.current === 0 && Array.isArray(event.messages)) {
           for (const msg of event.messages) {
@@ -418,7 +463,7 @@ export default function App() {
         }
         return
       case 'turn_end':
-        streamingAssistantRef.current = null
+        finalizeStreamingAssistant()
         setAgentStatus('Idle')
         if (messageCountRef.current === 0 && event.message) {
           handleAgentMessage(event.message, 'message_end')
