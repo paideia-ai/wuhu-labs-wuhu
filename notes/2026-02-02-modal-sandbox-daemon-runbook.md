@@ -187,6 +187,14 @@ allowlist. The script prints:
 - UI URL
 - `ADMIN_BEARER` + `USER_BEARER` tokens when JWT is enabled
 
+## Repro script (Bun + Modal SDK)
+
+If the Deno + Modal JS SDK path hangs (gRPC in Deno), use the Bun launcher:
+
+```bash
+bun run packages/tasks/modal-sandbox-daemon-launcher.bun.ts
+```
+
 ## Troubleshooting
 
 - If you get no agent events: ensure `pi` is installed and on `PATH`, and that
