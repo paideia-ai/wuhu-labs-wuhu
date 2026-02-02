@@ -85,6 +85,7 @@ const repoRoot = path.resolve(scriptDir, '..', '..')
 const DAEMON_PORT = 8787
 const UI_PORT = 4173
 const oneHour = 60 * 60 * 1000
+const denoBin = '/root/.deno/bin/deno'
 
 const appName = process.env.WUHU_MODAL_APP_NAME?.trim() ||
   'wuhu-sandbox-daemon-modal-debug'
@@ -282,7 +283,7 @@ await sb.exec(
   [
     'bash',
     '-lc',
-    'nohup deno run -A /root/wuhu-daemon/sandbox-daemon.bundle.js > /root/wuhu-daemon/daemon.log 2>&1 & echo $! > /root/wuhu-daemon/daemon.pid',
+    `nohup ${denoBin} run -A /root/wuhu-daemon/sandbox-daemon.bundle.js > /root/wuhu-daemon/daemon.log 2>&1 & echo $! > /root/wuhu-daemon/daemon.pid`,
   ],
   {
     env: {
