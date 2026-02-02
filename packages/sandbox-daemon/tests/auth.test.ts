@@ -11,7 +11,7 @@ function futureExp(secondsFromNow = 60): number {
   return Math.floor(Date.now() / 1000) + secondsFromNow
 }
 
-async function token(scope: 'control' | 'observer'): Promise<string> {
+async function token(scope: 'admin' | 'user'): Promise<string> {
   const claims: SandboxDaemonJwtClaims = {
     sub: 'tester',
     scope,
@@ -37,17 +37,17 @@ Deno.test('JWT: missing bearer token rejected', async () => {
   assertEquals(res.status, 401)
 })
 
-Deno.test('JWT: observer can stream but not control endpoints', async () => {
+Deno.test('JWT: user can stream and prompt but not admin endpoints', async () => {
   const provider = new FakeAgentProvider()
   const { app } = createSandboxDaemonApp({
     provider,
     auth: { secret, issuer: 'wuhu-test', enabled: true },
   })
-  const observerToken = await token('observer')
+  const userToken = await token('user')
 
   const streamRes = await app.request('/stream?cursor=0', {
     method: 'GET',
-    headers: { Authorization: `Bearer ${observerToken}` },
+    headers: { Authorization: `Bearer ${userToken}` },
   })
   assertEquals(streamRes.status, 200)
 
@@ -55,29 +55,83 @@ Deno.test('JWT: observer can stream but not control endpoints', async () => {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      Authorization: `Bearer ${observerToken}`,
+      Authorization: `Bearer ${userToken}`,
     },
     body: JSON.stringify({ message: 'hi' }),
   })
-  assertEquals(promptRes.status, 403)
+  assertEquals(promptRes.status, 200)
+
+  const credsRes = await app.request('/credentials', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({ version: 'test' }),
+  })
+  assertEquals(credsRes.status, 403)
 })
 
-Deno.test('JWT: control can call prompt', async () => {
+Deno.test('JWT: admin can call prompt and init', async () => {
   const provider = new FakeAgentProvider()
   const { app } = createSandboxDaemonApp({
     provider,
     auth: { secret, issuer: 'wuhu-test', enabled: true },
   })
-  const controlToken = await token('control')
+  const adminToken = await token('admin')
 
   const res = await app.request('/prompt', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      Authorization: `Bearer ${controlToken}`,
+      Authorization: `Bearer ${adminToken}`,
     },
     body: JSON.stringify({ message: 'hi' }),
   })
 
   assertEquals(res.status, 200)
+
+  const initRes = await app.request('/init', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({ workspace: { repos: [] } }),
+  })
+  assertEquals(initRes.status, 200)
+})
+
+Deno.test('CORS preflight bypasses auth when origin is allowed', async () => {
+  const provider = new FakeAgentProvider()
+  const { app } = createSandboxDaemonApp({
+    provider,
+    auth: { secret, issuer: 'wuhu-test', enabled: true },
+  })
+  const adminToken = await token('admin')
+
+  const initRes = await app.request('/init', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      workspace: { repos: [] },
+      cors: { allowedOrigins: ['https://ui.example.com'] },
+    }),
+  })
+  assertEquals(initRes.status, 200)
+
+  const preflight = await app.request('/prompt', {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'https://ui.example.com',
+    },
+  })
+  assertEquals(preflight.status, 204)
+  assertEquals(
+    preflight.headers.get('access-control-allow-origin'),
+    'https://ui.example.com',
+  )
 })

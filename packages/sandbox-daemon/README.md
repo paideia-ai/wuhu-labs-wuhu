@@ -1,7 +1,7 @@
 # `@wuhu/sandbox-daemon`
 
 HTTP daemon that wraps a coding agent (Pi in Protocol 0 RPC mode) behind a small
-control API and an SSE event stream.
+admin API and an SSE event stream.
 
 ## Run
 
@@ -39,8 +39,19 @@ export SANDBOX_DAEMON_PI_ARGS='-y @mariozechner/pi-coding-agent --mode rpc --no-
 
 When enabled:
 
-- `POST` endpoints require `scope: "control"`
-- `/stream` allows `scope: "observer"` or `"control"`
+- `admin` scope can call everything
+- `user` scope can call `/prompt`, `/abort`, and `/stream`
+
+To allow browser access from arbitrary domains, include a CORS allowlist in the
+`/init` handshake:
+
+```json
+{
+  "cors": {
+    "allowedOrigins": ["https://your-ui.example"]
+  }
+}
+```
 
 ## API
 
