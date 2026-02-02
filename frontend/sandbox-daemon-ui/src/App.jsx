@@ -387,6 +387,9 @@ export default function App() {
     }
 
     switch (event.type) {
+      case 'turn_start':
+        streamingAssistantRef.current = null
+        return
       case 'message_start':
       case 'message_update':
       case 'message_end':
@@ -406,6 +409,7 @@ export default function App() {
         )
         return
       case 'agent_end':
+        streamingAssistantRef.current = null
         setAgentStatus('Idle')
         if (messageCountRef.current === 0 && Array.isArray(event.messages)) {
           for (const msg of event.messages) {
@@ -414,6 +418,7 @@ export default function App() {
         }
         return
       case 'turn_end':
+        streamingAssistantRef.current = null
         setAgentStatus('Idle')
         if (messageCountRef.current === 0 && event.message) {
           handleAgentMessage(event.message, 'message_end')
