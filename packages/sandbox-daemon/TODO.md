@@ -2,65 +2,38 @@
 
 This file tracks the next concrete steps for the sandbox daemon package.
 
-## Protocol 0 / Pi integration
+## Protocol 0 / Pi integration (hardening)
 
-- Add a `main.ts` entrypoint that:
-  - Reads basic config from env (e.g., port, workspace root).
-  - Constructs a `PiAgentProvider` and `createSandboxDaemonApp`.
-  - Starts an HTTP server (Deno `serve`) on the configured port.
-- Decide how to wire credentials into the Pi process:
-  - Map `SandboxDaemonCredentialsPayload` into environment variables for `pi`.
-  - Avoid ever writing secrets into logs or the event stream.
+- Audit for secret leakage:
+  - Ensure `SandboxDaemonCredentialsPayload` is never appended to the event
+    stream.
+  - Ensure logs never print secrets (only booleans / redacted).
+- Increase test coverage for the “real Pi process” transport
+  (`ProcessPiTransport`):
+  - Spawn/kill lifecycle, line framing, error cases (transport not started, bad
+    JSON).
 
-## HTTP API surface
+## Auth (more negative cases)
 
-- Extend tests to cover:
-  - `POST /credentials` (accepts payload, returns `{ ok: true }`).
-  - `POST /init` (echoes repo summaries and validates payload shape).
-- Implement basic validation / error handling:
-  - Reject malformed JSON with clear 4xx errors.
-  - Return 5xx on internal failures instead of throwing.
+- Add tests for invalid JWT paths:
+  - malformed token, bad signature, unsupported alg, expired `exp`, issuer
+    mismatch.
 
-## Streaming behavior
+## Workspace cloning (edge cases)
 
-- Extend `/stream` implementation to support live tail:
-  - Keep the SSE connection open and stream new events as they are appended.
-  - Add minimal backoff / heartbeat behavior for idle streams.
-- Add tests for:
-  - Resuming from a non-zero `cursor`.
-  - Multiple subscribers receiving the same events.
+- Add tests for clone/checkout edge cases:
+  - repo path exists but is non-empty and not a git repo → error.
+  - repo already cloned → no re-clone; branch checkout behavior.
+  - path traversal / outside-workspace rejection.
 
-## Git checkpoint mode
+## Git checkpoint mode (extras)
 
-- Introduce a lightweight abstraction for git operations scoped to a repo:
-  - Commit (add + commit with a message template).
-  - Optional push to a remote.
-- Wire checkpoint behavior to agent events:
-  - On relevant agent events (e.g., `turn_end`), run checkpoint logic when
-    `mode === "per-turn"`.
-  - Emit `checkpoint_commit` events with branch and commit SHA.
-- Add tests using temporary git repositories:
-  - Verify commits are created.
-  - Verify checkpoint events are appended to the event stream.
+- Add tests for `push: true` with a local bare remote (success + failure cases).
+- Add tests for “no staged changes” path (should not emit checkpoint event).
 
-## JWT / auth
+## Coverage follow-up
 
-- Implement JWT validation for incoming HTTP requests:
-  - Parse `Authorization: Bearer <token>`.
-  - Validate signature, `exp`, and `scope`.
-  - Enforce `scope: "control"` for POST endpoints; allow `"observer"` for
-    `/stream`.
-- Add tests with hard-coded HMAC secret:
-  - Valid control token can call `/prompt`.
-  - Observer token can only call `/stream`.
-  - Missing/invalid tokens are rejected.
-
-## Configuration & ergonomics
-
-- Define a small config module for:
-  - Port, bind address.
-  - JWT secret / issuer.
-  - Workspace root (for future repo cloning/checkpointing).
-- Document how to run the daemon locally (README section):
-  - Example `deno run -A packages/sandbox-daemon/main.ts`.
-  - Example curl commands for `/prompt` and `/stream`.
+- Keep `coverage:check` above the agreed minimum for `src/` and raise the bar
+  over time.
+- Focus coverage on the least-covered modules first:
+  - `src/pi-agent-provider.ts`, `src/git-checkpoint.ts`, `src/workspace.ts`.
