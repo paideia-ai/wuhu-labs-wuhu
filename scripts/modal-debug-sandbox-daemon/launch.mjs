@@ -114,7 +114,7 @@ run('deno', [
   '-o',
   bundlePath,
   path.join(repoRoot, 'packages/sandbox-daemon/main.ts'),
-])
+], { cwd: repoRoot })
 
 console.log('Building UI...')
 const uiProjectDir = path.join(repoRoot, 'frontend/sandbox-daemon-ui')

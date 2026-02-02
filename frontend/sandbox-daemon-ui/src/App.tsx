@@ -60,9 +60,10 @@ export default function App() {
   }, [cursor])
 
   const authHeaders = useMemo(() => {
+    const headers: Record<string, string> = {}
     const t = token.trim()
-    if (!t) return {}
-    return { authorization: `Bearer ${t}` }
+    if (t) headers.authorization = `Bearer ${t}`
+    return headers
   }, [token])
 
   const logRef = useRef<HTMLDivElement | null>(null)
@@ -94,12 +95,13 @@ export default function App() {
 
     pushLog({ kind: 'info', ts: nowTs(), message: `POST ${url}/prompt` })
     try {
+      const headers: Record<string, string> = {
+        ...authHeaders,
+        'content-type': 'application/json',
+      }
       const res = await fetch(`${url}/prompt`, {
         method: 'POST',
-        headers: {
-          ...authHeaders,
-          'content-type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ message }),
       })
       const text = await res.text()
@@ -147,12 +149,13 @@ export default function App() {
     pushLog({ kind: 'info', ts: nowTs(), message: `GET ${streamUrl}` })
 
     try {
+      const headers: Record<string, string> = {
+        ...authHeaders,
+        accept: 'text/event-stream',
+      }
       const res = await fetch(streamUrl, {
         method: 'GET',
-        headers: {
-          ...authHeaders,
-          accept: 'text/event-stream',
-        },
+        headers,
         signal: controller.signal,
       })
       if (!res.ok) {
