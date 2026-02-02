@@ -13,6 +13,9 @@
   },
   "tasks": {
     "check": "deno check . && deno lint",
-    "test": "deno test -A"
+    "test": "deno test -A",
+    "coverage": "deno test -A --coverage=coverage && deno coverage coverage --detailed",
+    "coverage:lcov": "deno test -A --coverage=coverage && deno coverage coverage --lcov --output=coverage.lcov",
+    "coverage:check": "deno run -A ./scripts/coverage_check.ts"
   }
 }
