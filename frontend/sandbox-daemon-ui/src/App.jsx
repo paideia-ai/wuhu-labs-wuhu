@@ -156,7 +156,7 @@ export default function App() {
           const parsed = parseSseChunk(part)
           if (!parsed.data) continue
 
-          let payload = parsed.data
+          const payload = parsed.data
           let parsedJson = null
           try {
             parsedJson = JSON.parse(parsed.data)
@@ -242,7 +242,7 @@ export default function App() {
       <section className='panel'>
         <div className='panel__header'>
           <h2>Prompt</h2>
-          <button className='primary' onClick={handleSendPrompt}>
+          <button type='button' className='primary' onClick={handleSendPrompt}>
             Send
           </button>
         </div>
@@ -258,10 +258,11 @@ export default function App() {
         <div className='panel__header'>
           <h2>Stream</h2>
           <div className='controls'>
-            <button onClick={startStream} disabled={streaming}>
+            <button type='button' onClick={startStream} disabled={streaming}>
               Start
             </button>
             <button
+              type='button'
               className='ghost'
               onClick={stopStream}
               disabled={!streaming}

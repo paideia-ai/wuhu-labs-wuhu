@@ -1,85 +1,127 @@
-import crypto from 'node:crypto'
-import fs from 'node:fs/promises'
-import path from 'node:path'
-import process from 'node:process'
-import { fileURLToPath } from 'node:url'
-import { spawn } from 'node:child_process'
-import { tmpdir } from 'node:os'
+import { dirname, fromFileUrl, join, posix } from '@std/path'
 import { ModalClient } from 'modal'
 
-function requireEnv(name) {
-  const value = process.env[name]
+type ModalSandbox = Awaited<ReturnType<ModalClient['sandboxes']['create']>>
+
+interface RunOptions {
+  cwd?: string
+  env?: Record<string, string>
+}
+
+function requireEnv(name: string): string {
+  const value = Deno.env.get(name)
   if (!value || !value.trim()) {
     throw new Error(`Missing env var: ${name}`)
   }
   return value.trim()
 }
 
-function run(cmd, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: 'inherit', ...options })
-    child.on('error', reject)
-    child.on('exit', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`${cmd} ${args.join(' ')} failed: ${code}`))
-    })
+async function run(cmd: string, args: string[], options: RunOptions = {}) {
+  const command = new Deno.Command(cmd, {
+    args,
+    cwd: options.cwd,
+    env: options.env,
+    stdin: 'null',
+    stdout: 'inherit',
+    stderr: 'inherit',
   })
+  const child = command.spawn()
+  const status = await child.status
+  if (!status.success) {
+    throw new Error(`${cmd} ${args.join(' ')} failed: ${status.code}`)
+  }
 }
 
-function base64url(input) {
-  return Buffer.from(input)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '')
+function randomHex(bytes: number): string {
+  const buffer = crypto.getRandomValues(new Uint8Array(bytes))
+  return Array.from(buffer, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-function signHs256Jwt(claims, secret) {
-  const headerB64 = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
-  const payloadB64 = base64url(JSON.stringify(claims))
+function base64UrlEncodeBytes(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  const b64 = btoa(binary)
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+async function hmacSha256(
+  secret: string,
+  message: string,
+): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(message),
+  )
+  return new Uint8Array(signature)
+}
+
+async function signHs256Jwt(
+  claims: Record<string, unknown>,
+  secret: string,
+): Promise<string> {
+  const headerB64 = base64UrlEncodeBytes(
+    new TextEncoder().encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })),
+  )
+  const payloadB64 = base64UrlEncodeBytes(
+    new TextEncoder().encode(JSON.stringify(claims)),
+  )
   const signingInput = `${headerB64}.${payloadB64}`
-  const sig = crypto.createHmac('sha256', secret).update(signingInput).digest()
-  const sigB64 = Buffer.from(sig)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '')
-  return `${signingInput}.${sigB64}`
+  const signature = await hmacSha256(secret, signingInput)
+  const signatureB64 = base64UrlEncodeBytes(signature)
+  return `${signingInput}.${signatureB64}`
 }
 
-async function uploadFile(sb, remotePath, bytes) {
+async function uploadFile(
+  sb: ModalSandbox,
+  remotePath: string,
+  bytes: Uint8Array,
+) {
   const file = await sb.open(remotePath, 'w')
   await file.write(bytes)
   await file.flush()
   await file.close()
 }
 
-async function uploadDir(sb, localDir, remoteDir) {
+async function uploadDir(
+  sb: ModalSandbox,
+  localDir: string,
+  remoteDir: string,
+) {
   await sb.exec(['mkdir', '-p', remoteDir])
-  const entries = await fs.readdir(localDir, { withFileTypes: true })
-  for (const entry of entries) {
-    const localPath = path.join(localDir, entry.name)
-    const remotePath = path.posix.join(remoteDir, entry.name)
-    if (entry.isDirectory()) {
+  for await (const entry of Deno.readDir(localDir)) {
+    const localPath = join(localDir, entry.name)
+    const remotePath = posix.join(remoteDir, entry.name)
+    if (entry.isDirectory) {
       await uploadDir(sb, localPath, remotePath)
       continue
     }
-    const bytes = await fs.readFile(localPath)
+    const bytes = await Deno.readFile(localPath)
     await uploadFile(sb, remotePath, bytes)
   }
 }
 
-const repoRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-)
-const uiRoot = path.join(repoRoot, 'frontend', 'sandbox-daemon-ui')
-const daemonEntry = path.join(repoRoot, 'packages', 'sandbox-daemon', 'main.ts')
-const bundlePath = path.join(tmpdir(), 'sandbox-daemon.bundle.js')
+const scriptDir = dirname(fromFileUrl(import.meta.url))
+const repoRoot = dirname(dirname(scriptDir))
+const uiRoot = join(repoRoot, 'frontend', 'sandbox-daemon-ui')
+const daemonEntry = join(repoRoot, 'packages', 'sandbox-daemon', 'main.ts')
+const bundlePath = await Deno.makeTempFile({
+  prefix: 'sandbox-daemon-',
+  suffix: '.bundle.js',
+})
 
-const daemonPort = Number(process.env.SANDBOX_DAEMON_PORT || 8787)
-const uiPort = Number(process.env.SANDBOX_DAEMON_UI_PORT || 4173)
-const appName = process.env.SANDBOX_DAEMON_MODAL_APP ||
+const daemonPort = Number(Deno.env.get('SANDBOX_DAEMON_PORT') || 8787)
+const uiPort = Number(Deno.env.get('SANDBOX_DAEMON_UI_PORT') || 4173)
+const appName = Deno.env.get('SANDBOX_DAEMON_MODAL_APP') ||
   'wuhu-sandbox-daemon-debug'
 const oneHour = 60 * 60 * 1000
 
@@ -90,19 +132,19 @@ console.log('Building sandbox daemon UI...')
 await run('bun', ['install'], { cwd: uiRoot })
 await run('bun', ['run', 'build'], { cwd: uiRoot })
 
-const uiDist = path.join(uiRoot, 'dist')
-const bundleBytes = await fs.readFile(bundlePath)
+const uiDist = join(uiRoot, 'dist')
+const bundleBytes = await Deno.readFile(bundlePath)
 
 const modal = new ModalClient({
   tokenId: requireEnv('MODAL_TOKEN_ID'),
   tokenSecret: requireEnv('MODAL_TOKEN_SECRET'),
 })
 
-const openAiKey = process.env.OPENAI_API_KEY?.trim() ||
-  process.env.WUHU_DEV_OPENAI_API_KEY?.trim() ||
+const openAiKey = Deno.env.get('OPENAI_API_KEY')?.trim() ||
+  Deno.env.get('WUHU_DEV_OPENAI_API_KEY')?.trim() ||
   ''
-const ghToken = process.env.GH_TOKEN?.trim() ||
-  process.env.GITHUB_TOKEN?.trim() ||
+const ghToken = Deno.env.get('GH_TOKEN')?.trim() ||
+  Deno.env.get('GITHUB_TOKEN')?.trim() ||
   ''
 
 const app = await modal.apps.fromName(appName, { createIfMissing: true })
@@ -191,38 +233,41 @@ server.listen(port, '0.0.0.0', () => {
 `
 
 await uploadDir(sb, uiDist, '/root/wuhu-ui/dist')
-await uploadFile(sb, '/root/wuhu-ui/server.mjs', Buffer.from(serverScript))
+await uploadFile(
+  sb,
+  '/root/wuhu-ui/server.mjs',
+  new TextEncoder().encode(serverScript),
+)
 
-const jwtEnabled = process.env.SANDBOX_DAEMON_JWT_ENABLED === 'true' ||
-  Boolean(process.env.SANDBOX_DAEMON_JWT_SECRET)
+const jwtEnabled = Deno.env.get('SANDBOX_DAEMON_JWT_ENABLED') === 'true' ||
+  Boolean(Deno.env.get('SANDBOX_DAEMON_JWT_SECRET'))
 const jwtSecret = jwtEnabled
-  ? process.env.SANDBOX_DAEMON_JWT_SECRET ||
-    crypto.randomBytes(32).toString('hex')
+  ? Deno.env.get('SANDBOX_DAEMON_JWT_SECRET') || randomHex(32)
   : null
-const jwtIssuer = process.env.SANDBOX_DAEMON_JWT_ISSUER
+const jwtIssuer = Deno.env.get('SANDBOX_DAEMON_JWT_ISSUER')
 const now = Math.floor(Date.now() / 1000)
 const exp = now + 55 * 60
 
 const adminToken = jwtEnabled
-  ? signHs256Jwt(
+  ? await signHs256Jwt(
     {
       sub: 'wuhu',
       scope: 'admin',
       exp,
       ...(jwtIssuer ? { iss: jwtIssuer } : {}),
     },
-    jwtSecret,
+    jwtSecret!,
   )
   : null
 const userToken = jwtEnabled
-  ? signHs256Jwt(
+  ? await signHs256Jwt(
     {
       sub: 'wuhu',
       scope: 'user',
       exp,
       ...(jwtIssuer ? { iss: jwtIssuer } : {}),
     },
-    jwtSecret,
+    jwtSecret!,
   )
   : null
 
@@ -232,7 +277,7 @@ await sb.exec(['deno', 'run', '-A', remoteBundlePath], {
     SANDBOX_DAEMON_PORT: String(daemonPort),
     SANDBOX_DAEMON_WORKSPACE_ROOT: '/root/workspace',
     SANDBOX_DAEMON_JWT_ENABLED: jwtEnabled ? 'true' : 'false',
-    ...(jwtEnabled ? { SANDBOX_DAEMON_JWT_SECRET: jwtSecret } : {}),
+    ...(jwtEnabled ? { SANDBOX_DAEMON_JWT_SECRET: jwtSecret! } : {}),
     ...(jwtIssuer ? { SANDBOX_DAEMON_JWT_ISSUER: jwtIssuer } : {}),
     ...(openAiKey ? { OPENAI_API_KEY: openAiKey } : {}),
   },
@@ -252,7 +297,7 @@ const daemonUrl = tunnels[daemonPort].url.replace(/\/$/, '')
 const uiUrl = tunnels[uiPort].url.replace(/\/$/, '')
 const uiOrigin = new URL(uiUrl).origin
 
-const initHeaders = {
+const initHeaders: HeadersInit = {
   'content-type': 'application/json',
   ...(adminToken ? { authorization: `Bearer ${adminToken}` } : {}),
 }
