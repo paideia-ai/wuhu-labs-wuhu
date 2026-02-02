@@ -8,6 +8,45 @@ interface RunOptions {
   env?: Record<string, string>
 }
 
+async function withTimeout<T>(
+  label: string,
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return await promise
+
+  const startedAt = Date.now()
+  const progressIntervalMs = Number(
+    Deno.env.get('WUHU_PROGRESS_INTERVAL_MS') || 5_000,
+  )
+
+  const progressTimerId = progressIntervalMs > 0
+    ? setInterval(() => {
+      const elapsed = Date.now() - startedAt
+      console.log(`[${label}] still waiting... ${elapsed}ms elapsed`)
+    }, progressIntervalMs)
+    : null
+
+  let timeoutTimerId: number | null = null
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutTimerId = setTimeout(() => {
+      const elapsed = Date.now() - startedAt
+      reject(
+        new Error(
+          `[${label}] timed out after ${timeoutMs}ms (elapsed ${elapsed}ms)`,
+        ),
+      )
+    }, timeoutMs)
+  })
+
+  try {
+    return await Promise.race([promise, timeoutPromise])
+  } finally {
+    if (progressTimerId) clearInterval(progressTimerId)
+    if (timeoutTimerId !== null) clearTimeout(timeoutTimerId)
+  }
+}
+
 function requireEnv(name: string): string {
   const value = Deno.env.get(name)
   if (!value || !value.trim()) {
@@ -147,7 +186,15 @@ const ghToken = Deno.env.get('GH_TOKEN')?.trim() ||
   Deno.env.get('GITHUB_TOKEN')?.trim() ||
   ''
 
-const app = await modal.apps.fromName(appName, { createIfMissing: true })
+const fromNameTimeoutMs = Number(
+  Deno.env.get('WUHU_MODAL_FROMNAME_TIMEOUT_MS') || 60_000,
+)
+console.log(`Resolving Modal app "${appName}"...`)
+const app = await withTimeout(
+  'modal.apps.fromName',
+  modal.apps.fromName(appName, { createIfMissing: true }),
+  fromNameTimeoutMs,
+)
 let image = modal.images.fromRegistry('node:22-bookworm-slim')
 image = image.dockerfileCommands([
   'RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git unzip && rm -rf /var/lib/apt/lists/*',

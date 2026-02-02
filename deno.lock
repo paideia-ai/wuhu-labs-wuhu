@@ -5,7 +5,11 @@
     "jsr:@std/assert@1": "1.0.18",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/path@1": "1.1.4",
+    "npm:modal@0.5.6": "0.5.6",
+    "npm:modal@0.6.0": "0.6.0",
     "npm:modal@0.6.1": "0.6.1",
+    "npm:nice-grpc@2.1.11": "2.1.11",
+    "npm:nice-grpc@2.1.12": "2.1.12",
     "npm:zod@4.3.6": "4.3.6"
   },
   "jsr": {
@@ -191,12 +195,34 @@
     "long@5.3.2": {
       "integrity": "sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA=="
     },
+    "modal@0.5.6": {
+      "integrity": "sha512-SIK2834tfjONcosjmncoGsPyz2F+PGw9eZChzvfefNW6Q+eyTirOaiouyEfi49ucdDA0YG6u6UeXLhjaQqlJAQ==",
+      "dependencies": [
+        "cbor-x",
+        "long",
+        "nice-grpc@2.1.12",
+        "protobufjs",
+        "smol-toml",
+        "uuid"
+      ]
+    },
+    "modal@0.6.0": {
+      "integrity": "sha512-iNzkV+dlAn0O1dNdVZN6LR+0YPmBORf8Sor9+8wRBYm5sEE+Mf/MQjplBNxfVdXCKZgJTXKnqaJMMGl3GbWyDw==",
+      "dependencies": [
+        "cbor-x",
+        "long",
+        "nice-grpc@2.1.12",
+        "protobufjs",
+        "smol-toml",
+        "uuid"
+      ]
+    },
     "modal@0.6.1": {
       "integrity": "sha512-A2pLSxbXquAtJ5lqBb8SFiuKgJnkNk3bWB7msi/kjVef6m5kiSu3abmbVPPYBQ63K2em0YRk50eR+ElwQzxXXA==",
       "dependencies": [
         "cbor-x",
         "long",
-        "nice-grpc",
+        "nice-grpc@2.1.12",
         "protobufjs",
         "smol-toml",
         "uuid"
@@ -208,8 +234,16 @@
         "ts-error"
       ]
     },
-    "nice-grpc@2.1.14": {
-      "integrity": "sha512-GK9pKNxlvnU5FAdaw7i2FFuR9CqBspcE+if2tqnKXBcE0R8525wj4BZvfcwj7FjvqbssqKxRHt2nwedalbJlww==",
+    "nice-grpc@2.1.11": {
+      "integrity": "sha512-oizT4+EEJLvN5ydw38P1puP1a+7OngK2EehCA88PoRgnTEaxsb//4KUs+JlN0xjxt0waLC8j6UpOtcaIqOKmgQ==",
+      "dependencies": [
+        "@grpc/grpc-js",
+        "abort-controller-x",
+        "nice-grpc-common"
+      ]
+    },
+    "nice-grpc@2.1.12": {
+      "integrity": "sha512-J1n4Wg+D3IhRhGQb+iqh2OpiM0GzTve/kf2lnlW4S+xczmIEd0aHUDV1OsJ5a3q8GSTqJf+s4Rgg1M8uJltarw==",
       "dependencies": [
         "@grpc/grpc-js",
         "abort-controller-x",
