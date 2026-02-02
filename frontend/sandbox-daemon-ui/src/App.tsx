@@ -252,7 +252,7 @@ export default function App() {
           placeholder='Type a prompt...'
         />
         <div className='row'>
-          <button className='btn' onClick={() => void doPrompt()}>
+          <button type='button' className='btn' onClick={() => void doPrompt()}>
             Send
           </button>
         </div>
@@ -262,13 +262,19 @@ export default function App() {
         <div className='panelTitle'>Stream</div>
         <div className='row'>
           <button
+            type='button'
             className='btn'
             onClick={() => void startStream()}
             disabled={streaming}
           >
             Start Stream
           </button>
-          <button className='btn' onClick={stopStream} disabled={!streaming}>
+          <button
+            type='button'
+            className='btn'
+            onClick={stopStream}
+            disabled={!streaming}
+          >
             Stop
           </button>
         </div>

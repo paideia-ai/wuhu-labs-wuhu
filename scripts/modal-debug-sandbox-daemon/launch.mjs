@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { Buffer } from 'node:buffer'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
