@@ -116,17 +116,17 @@ Fetch tunnels:
 
 - `const tunnels = await sb.tunnels()` then `tunnels[8787].url`
 
-Use _our_ JWT:
+Use _our_ JWT with the new scope model:
 
-- `POST /credentials` requires `scope: "control"`
-- `POST /prompt`, `POST /init`, `POST /abort` require `scope: "control"`
-- `GET /stream` allows `scope: "observer"` or `"control"`
+- `scope: "admin"` → can call `/credentials`, `/init`, `/prompt`, `/abort`,
+  `/stream`
+- `scope: "user"` → can call `/prompt`, `/abort`, `/stream` only
 
 Example curl (SSE):
 
 ```bash
 curl -N \
-  -H "Authorization: Bearer <OBSERVER_TOKEN>" \
+  -H "Authorization: Bearer <USER_TOKEN>" \
   "https://<modal-host>/stream?cursor=0&follow=1"
 ```
 
@@ -134,7 +134,7 @@ Example curl (prompt):
 
 ```bash
 curl -s -X POST \
-  -H "Authorization: Bearer <CONTROL_TOKEN>" \
+  -H "Authorization: Bearer <USER_TOKEN>" \
   -H "content-type: application/json" \
   -d '{"message":"hello from outside the sandbox"}' \
   "https://<modal-host>/prompt"
@@ -253,12 +253,12 @@ await f.close()
 
 const jwtSecret = crypto.randomBytes(32).toString('hex')
 const now = Math.floor(Date.now() / 1000)
-const controlToken = signHs256Jwt(
-  { sub: 'wuhu', scope: 'control', exp: now + 55 * 60 },
+const adminToken = signHs256Jwt(
+  { sub: 'wuhu', scope: 'admin', exp: now + 55 * 60 },
   jwtSecret,
 )
-const observerToken = signHs256Jwt(
-  { sub: 'wuhu', scope: 'observer', exp: now + 55 * 60 },
+const userToken = signHs256Jwt(
+  { sub: 'wuhu', scope: 'user', exp: now + 55 * 60 },
   jwtSecret,
 )
 
@@ -278,8 +278,8 @@ const baseUrl = tunnels[PORT].url.replace(/\/$/, '')
 
 console.log('Base URL:', baseUrl)
 console.log('SSE:', `${baseUrl}/stream?cursor=0&follow=1`)
-console.log('CONTROL_BEARER:', controlToken)
-console.log('OBSERVER_BEARER:', observerToken)
+console.log('ADMIN_BEARER:', adminToken)
+console.log('USER_BEARER:', userToken)
 
 // Optional: send credentials so Pi gets GitHub token.
 if (ghToken || openAiKey) {
@@ -287,7 +287,7 @@ if (ghToken || openAiKey) {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${controlToken}`,
+      authorization: `Bearer ${adminToken}`,
     },
     body: JSON.stringify({
       version: 'experiment',
@@ -304,5 +304,25 @@ if (ghToken || openAiKey) {
   the daemon is in `pi-rpc` mode (default).
 - If cloning fails in `/init`: ensure `git` is installed and (if private repos)
   that you set `github.token` via `/credentials`.
-- If SSE returns 401/403: use the correct JWT token/scope; `/stream` needs
-  `observer` or `control`, while POST endpoints need `control`.
+- If SSE returns 401/403: use the correct JWT token/scope; `/stream`, `/prompt`,
+  `/abort` need `user` or `admin`; `/credentials` and `/init` need `admin`.
+
+## Using the Debug Launcher with UI
+
+For a faster workflow with a browser UI, use the automated launcher script:
+
+```bash
+node scripts/modal-sandbox-daemon-debug.mjs
+```
+
+This script:
+
+1. Bundles the daemon
+2. Builds the React UI from `frontend/sandbox-daemon-ui/`
+3. Creates a Modal sandbox with both daemon (port 8787) and UI (port 4173)
+4. Configures CORS automatically for the UI origin
+5. Prints URLs and JWT tokens
+
+The UI allows sending prompts and viewing SSE events directly in the browser
+using `fetch()` streaming (not EventSource) to support the `Authorization`
+header.

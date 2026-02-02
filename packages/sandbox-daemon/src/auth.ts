@@ -10,7 +10,7 @@ const zJwtHeader = z.object({
 const zJwtClaims = z.object({
   iss: z.string().optional(),
   sub: z.string(),
-  scope: z.union([z.literal('control'), z.literal('observer')]),
+  scope: z.union([z.literal('admin'), z.literal('user')]),
   exp: z.number(),
 }).passthrough()
 
@@ -203,7 +203,9 @@ export function requireScope(required: SandboxDaemonScope): MiddlewareHandler {
     if (!claims) {
       return c.json({ ok: false, error: 'missing_auth' }, 401)
     }
-    if (required === 'control' && claims.scope !== 'control') {
+    // admin scope can access everything
+    // user scope can only access user-level endpoints (prompt, abort, stream)
+    if (required === 'admin' && claims.scope !== 'admin') {
       return c.json({ ok: false, error: 'insufficient_scope' }, 403)
     }
     await next()

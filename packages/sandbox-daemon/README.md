@@ -37,10 +37,26 @@ export SANDBOX_DAEMON_PI_ARGS='-y @mariozechner/pi-coding-agent --mode rpc --no-
 - `SANDBOX_DAEMON_JWT_SECRET` (HS256 secret)
 - `SANDBOX_DAEMON_JWT_ISSUER` (optional)
 
-When enabled:
+When enabled, JWT tokens must include a `scope` claim:
 
-- `POST` endpoints require `scope: "control"`
-- `/stream` allows `scope: "observer"` or `"control"`
+- `scope: "admin"` → can call all endpoints (`/credentials`, `/init`, `/prompt`,
+  `/abort`, `/stream`)
+- `scope: "user"` → can call `/prompt`, `/abort`, `/stream` only
+
+### CORS (configured via /init)
+
+CORS is configured dynamically via the `/init` endpoint. Include a `cors` object
+with allowed origins:
+
+```json
+{
+  "workspace": { "repos": [] },
+  "cors": { "allowedOrigins": ["https://your-ui-domain.com"] }
+}
+```
+
+This allows browsers on the specified origins to make cross-origin requests.
+Preflight OPTIONS requests do not require authentication.
 
 ## API
 

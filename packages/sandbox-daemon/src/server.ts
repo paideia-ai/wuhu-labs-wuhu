@@ -84,6 +84,12 @@ const zGitCheckpointConfig = z
   })
   .passthrough()
 
+const zCorsConfig = z
+  .object({
+    allowedOrigins: z.array(z.string()),
+  })
+  .passthrough()
+
 const zInitRequest = z
   .object({
     workspace: z
@@ -93,6 +99,7 @@ const zInitRequest = z
       .passthrough(),
     gitCheckpoint: zGitCheckpointConfig.optional(),
     agent: z.unknown().optional(),
+    cors: zCorsConfig.optional(),
   })
   .passthrough()
 
@@ -172,6 +179,45 @@ export function createSandboxDaemonApp(
   let turnCounter = 0
   let checkpointQueue = Promise.resolve()
 
+  // CORS allowlist, configured via /init payload
+  const corsAllowedOrigins = new Set<string>()
+
+  // CORS middleware: must run before auth to handle OPTIONS preflight
+  const corsMiddleware: MiddlewareHandler = async (c, next) => {
+    const origin = c.req.header('origin') ?? c.req.header('Origin')
+
+    // Handle preflight OPTIONS requests (must not require auth)
+    if (c.req.method === 'OPTIONS') {
+      if (origin && corsAllowedOrigins.has(origin)) {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+            'Access-Control-Allow-Headers': 'authorization, content-type',
+            'Access-Control-Max-Age': '86400',
+            'Vary': 'Origin',
+          },
+        })
+      }
+      // Origin not in allowlist, still respond to OPTIONS but without CORS headers
+      return new Response(null, { status: 204 })
+    }
+
+    // For actual requests, set CORS headers if origin is allowed
+    await next()
+
+    if (origin && corsAllowedOrigins.has(origin)) {
+      c.header('Access-Control-Allow-Origin', origin)
+      c.header('Vary', 'Origin')
+      c.header('Access-Control-Allow-Headers', 'authorization, content-type')
+      c.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    }
+  }
+
+  // Apply CORS middleware first (handles OPTIONS without auth)
+  app.use('*', corsMiddleware)
+
   const noAuth: MiddlewareHandler = async (_c, next) => {
     await next()
   }
@@ -179,8 +225,10 @@ export function createSandboxDaemonApp(
   if (authEnabled) {
     app.use('*', createJwtMiddleware(auth ?? {}))
   }
-  const requireObserver = authEnabled ? requireScope('observer') : noAuth
-  const requireControl = authEnabled ? requireScope('control') : noAuth
+  // admin: can access everything (/credentials, /init, /prompt, /abort, /stream)
+  // user: can access /prompt, /abort, /stream only
+  const requireUser = authEnabled ? requireScope('user') : noAuth
+  const requireAdmin = authEnabled ? requireScope('admin') : noAuth
 
   provider.onEvent((event) => {
     eventStore.append(event)
@@ -200,7 +248,7 @@ export function createSandboxDaemonApp(
       })
   })
 
-  app.post('/credentials', requireControl, async (c: Context) => {
+  app.post('/credentials', requireAdmin, async (c: Context) => {
     const raw = await readJsonBody(c)
     if (raw === null) {
       return c.json({ ok: false, error: 'invalid_json' }, 400)
@@ -222,7 +270,7 @@ export function createSandboxDaemonApp(
     return c.json({ ok: true })
   })
 
-  app.post('/init', requireControl, async (c: Context) => {
+  app.post('/init', requireAdmin, async (c: Context) => {
     const raw = await readJsonBody(c)
     if (raw === null) {
       return c.json({ ok: false, error: 'invalid_json' }, 400)
@@ -232,6 +280,15 @@ export function createSandboxDaemonApp(
       return c.json({ ok: false, error: 'invalid_init_payload' }, 400)
     }
     const body = parsed.data as SandboxDaemonInitRequest
+
+    // Configure CORS allowlist if provided
+    if (body.cors?.allowedOrigins) {
+      // Clear existing and add new origins
+      corsAllowedOrigins.clear()
+      for (const origin of body.cors.allowedOrigins) {
+        corsAllowedOrigins.add(origin)
+      }
+    }
 
     checkpointer.setConfig(body.gitCheckpoint)
 
@@ -263,7 +320,7 @@ export function createSandboxDaemonApp(
     return c.json(response)
   })
 
-  app.post('/prompt', requireControl, async (c: Context) => {
+  app.post('/prompt', requireUser, async (c: Context) => {
     const raw = await readJsonBody(c)
     if (raw === null) {
       return c.json({ success: false, error: 'invalid_prompt_payload' }, 400)
@@ -285,7 +342,7 @@ export function createSandboxDaemonApp(
     return c.json(response)
   })
 
-  app.post('/abort', requireControl, async (c: Context) => {
+  app.post('/abort', requireUser, async (c: Context) => {
     const raw = await readJsonBody(c)
     const parsed = raw === null ? null : zAbortRequest.safeParse(raw)
     const body = parsed?.success
@@ -303,7 +360,7 @@ export function createSandboxDaemonApp(
     return c.json(response)
   })
 
-  app.get('/stream', requireObserver, (c: Context) => {
+  app.get('/stream', requireUser, (c: Context) => {
     const cursorParam = c.req.query('cursor')
     const cursor = cursorParam ? Number(cursorParam) || 0 : 0
     const followParam = c.req.query('follow')

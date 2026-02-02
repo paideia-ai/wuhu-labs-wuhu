@@ -1,4 +1,4 @@
-export type SandboxDaemonScope = 'control' | 'observer'
+export type SandboxDaemonScope = 'admin' | 'user'
 
 export interface SandboxDaemonJwtClaims {
   iss?: string
@@ -61,12 +61,17 @@ export interface SandboxDaemonAgentConfig {
   mode: SandboxDaemonAgentMode
 }
 
+export interface SandboxDaemonCorsConfig {
+  allowedOrigins: string[]
+}
+
 export interface SandboxDaemonInitRequest {
   workspace: {
     repos: SandboxDaemonRepoConfig[]
   }
   gitCheckpoint?: SandboxDaemonGitCheckpointConfig
   agent?: SandboxDaemonAgentConfig
+  cors?: SandboxDaemonCorsConfig
 }
 
 export interface SandboxDaemonInitRepoSummary {
