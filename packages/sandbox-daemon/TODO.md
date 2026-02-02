@@ -36,7 +36,8 @@ This file tracks the next concrete steps for the sandbox daemon package.
   - Commit (add + commit with a message template).
   - Optional push to a remote.
 - Wire checkpoint behavior to agent events:
-  - On relevant agent events (e.g., `turn_end`), run checkpoint logic when `mode === "per-turn"`.
+  - On relevant agent events (e.g., `turn_end`), run checkpoint logic when
+    `mode === "per-turn"`.
   - Emit `checkpoint_commit` events with branch and commit SHA.
 - Add tests using temporary git repositories:
   - Verify commits are created.
@@ -47,7 +48,8 @@ This file tracks the next concrete steps for the sandbox daemon package.
 - Implement JWT validation for incoming HTTP requests:
   - Parse `Authorization: Bearer <token>`.
   - Validate signature, `exp`, and `scope`.
-  - Enforce `scope: "control"` for POST endpoints; allow `"observer"` for `/stream`.
+  - Enforce `scope: "control"` for POST endpoints; allow `"observer"` for
+    `/stream`.
 - Add tests with hard-coded HMAC secret:
   - Valid control token can call `/prompt`.
   - Observer token can only call `/stream`.
@@ -62,4 +64,3 @@ This file tracks the next concrete steps for the sandbox daemon package.
 - Document how to run the daemon locally (README section):
   - Example `deno run -A packages/sandbox-daemon/main.ts`.
   - Example curl commands for `/prompt` and `/stream`.
-
