@@ -305,8 +305,7 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@std/path@1",
-      "npm:@paideia-ai/modal@0.6.1-paideia.0"
+      "jsr:@std/path@1"
     ],
     "members": {
       "packages/sandbox-daemon": {

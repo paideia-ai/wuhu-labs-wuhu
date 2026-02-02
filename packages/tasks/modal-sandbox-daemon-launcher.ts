@@ -338,3 +338,5 @@ if (jwtEnabled) {
   console.log('ADMIN_BEARER:', adminToken)
   console.log('USER_BEARER:', userToken)
 }
+
+modal.close()

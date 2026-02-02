@@ -192,6 +192,9 @@ export default function App() {
 
   const appendMessage = (message) => {
     setMessages((prev) => {
+      if (message?.id && prev.some((item) => item.id === message.id)) {
+        return prev
+      }
       const next = [...prev, message]
       return next.length > 300 ? next.slice(next.length - 300) : next
     })
@@ -263,6 +266,15 @@ export default function App() {
           }
           return next
         }
+        next.push({
+          id: pending.id,
+          role: 'user',
+          title: 'You',
+          text: pending.text,
+          timestamp: formatTimestamp(timestamp),
+          status: 'sent',
+        })
+        return next
       }
       const fallbackIndex = [...next]
         .reverse()
