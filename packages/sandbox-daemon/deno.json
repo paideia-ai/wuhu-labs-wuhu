@@ -1,0 +1,13 @@
+{
+  "name": "@wuhu/sandbox-daemon",
+  "exports": {
+    ".": "./mod.ts",
+    "./types.ts": "./types.ts"
+  },
+  "imports": {},
+  "tasks": {
+    "check": "deno check . && deno lint",
+    "test": "deno test -A"
+  }
+}
+
