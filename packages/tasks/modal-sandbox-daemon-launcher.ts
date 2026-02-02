@@ -48,6 +48,34 @@ function logStep(label: string): void {
   console.log(`[+${sinceStart}s | +${sinceLast}s] ${label}`)
 }
 
+async function withTimeout<T>(
+  label: string,
+  ms: number,
+  task: () => Promise<T>,
+): Promise<T> {
+  let timeoutId: number | undefined
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`))
+    }, ms)
+  })
+  try {
+    return await Promise.race([task(), timeoutPromise])
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+    }
+  }
+}
+
+const modalTimeoutMs = Number(Deno.env.get('MODAL_TIMEOUT_MS') || 60_000)
+const modalDebug = Deno.env.get('MODAL_DEBUG') === '1' ||
+  Deno.env.get('MODAL_DEBUG') === 'true'
+if (modalDebug) {
+  Deno.env.set('GRPC_TRACE', 'all')
+  Deno.env.set('GRPC_VERBOSITY', 'DEBUG')
+}
+
 function base64UrlEncodeBytes(bytes: Uint8Array): string {
   let binary = ''
   for (let i = 0; i < bytes.length; i++) {
@@ -159,7 +187,18 @@ const ghToken = Deno.env.get('GH_TOKEN')?.trim() ||
   ''
 
 logStep('Connecting to Modal...')
-const app = await modal.apps.fromName(appName, { createIfMissing: true })
+logStep(
+  `Modal env: tokenId=${
+    Deno.env.get('MODAL_TOKEN_ID') ? 'set' : 'missing'
+  }, tokenSecret=${
+    Deno.env.get('MODAL_TOKEN_SECRET') ? 'set' : 'missing'
+  }, debug=${modalDebug}`,
+)
+const app = await withTimeout(
+  'modal.apps.fromName',
+  modalTimeoutMs,
+  () => modal.apps.fromName(appName, { createIfMissing: true }),
+)
 logStep(`Modal app ready: ${appName}`)
 let image = modal.images.fromRegistry('node:22-bookworm-slim')
 image = image.dockerfileCommands([
@@ -172,16 +211,25 @@ image = image.dockerfileCommands([
 ])
 
 logStep('Building Modal image...')
-const builtImage = await image.build(app)
+const builtImage = await withTimeout(
+  'image.build',
+  modalTimeoutMs * 10,
+  () => image.build(app),
+)
 logStep(`Image built: ${builtImage.imageId}`)
 
 logStep('Creating sandbox (1h idle + 1h timeout)...')
-const sb = await modal.sandboxes.create(app, builtImage, {
-  command: ['sleep', 'infinity'],
-  encryptedPorts: [daemonPort, uiPort],
-  timeoutMs: oneHour,
-  idleTimeoutMs: oneHour,
-})
+const sb = await withTimeout(
+  'modal.sandboxes.create',
+  modalTimeoutMs * 5,
+  () =>
+    modal.sandboxes.create(app, builtImage, {
+      command: ['sleep', 'infinity'],
+      encryptedPorts: [daemonPort, uiPort],
+      timeoutMs: oneHour,
+      idleTimeoutMs: oneHour,
+    }),
+)
 
 logStep(`Sandbox ID: ${sb.sandboxId}`)
 
@@ -312,7 +360,11 @@ logStep('Waiting for services to settle...')
 await new Promise((resolve) => setTimeout(resolve, 2000))
 
 logStep('Fetching tunnels...')
-const tunnels = await sb.tunnels(60_000)
+const tunnels = await withTimeout(
+  'sb.tunnels',
+  modalTimeoutMs,
+  () => sb.tunnels(60_000),
+)
 const daemonUrl = tunnels[daemonPort].url.replace(/\/$/, '')
 const uiUrl = tunnels[uiPort].url.replace(/\/$/, '')
 const uiOrigin = new URL(uiUrl).origin
