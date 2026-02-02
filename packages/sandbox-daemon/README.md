@@ -39,8 +39,22 @@ export SANDBOX_DAEMON_PI_ARGS='-y @mariozechner/pi-coding-agent --mode rpc --no-
 
 When enabled:
 
-- `POST` endpoints require `scope: "control"`
-- `/stream` allows `scope: "observer"` or `"control"`
+- `scope: "admin"` can call everything (`/credentials`, `/init`, `/prompt`,
+  `/abort`, `/stream`)
+- `scope: "user"` can call only (`/prompt`, `/abort`, `/stream`)
+
+### CORS (browser support)
+
+The daemon uses a handshake-configured CORS allowlist.
+
+- During `POST /init`, include `cors.allowedOrigins` with the exact UI origins
+  that should be allowed to call the daemon from a browser.
+- For allowed origins, the daemon responds with:
+  - `Access-Control-Allow-Origin: <origin>`
+  - `Vary: Origin`
+  - `Access-Control-Allow-Headers: authorization, content-type`
+  - `Access-Control-Allow-Methods: GET,POST,OPTIONS`
+- `OPTIONS` preflight requests are always handled without auth.
 
 ## API
 

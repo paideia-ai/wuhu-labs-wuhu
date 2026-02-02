@@ -10,7 +10,7 @@ const zJwtHeader = z.object({
 const zJwtClaims = z.object({
   iss: z.string().optional(),
   sub: z.string(),
-  scope: z.union([z.literal('control'), z.literal('observer')]),
+  scope: z.union([z.literal('admin'), z.literal('user')]),
   exp: z.number(),
 }).passthrough()
 
@@ -182,6 +182,10 @@ export function createJwtMiddleware(
   }
 
   return async (c, next) => {
+    if (c.req.method === 'OPTIONS') {
+      await next()
+      return
+    }
     const auth = c.req.header('authorization') ?? c.req.header('Authorization')
     if (!auth || !auth.startsWith('Bearer ')) {
       return c.json({ ok: false, error: 'missing_auth' }, 401)
@@ -203,7 +207,12 @@ export function requireScope(required: SandboxDaemonScope): MiddlewareHandler {
     if (!claims) {
       return c.json({ ok: false, error: 'missing_auth' }, 401)
     }
-    if (required === 'control' && claims.scope !== 'control') {
+    if (required === 'admin' && claims.scope !== 'admin') {
+      return c.json({ ok: false, error: 'insufficient_scope' }, 403)
+    }
+    if (
+      required === 'user' && claims.scope !== 'admin' && claims.scope !== 'user'
+    ) {
       return c.json({ ok: false, error: 'insufficient_scope' }, 403)
     }
     await next()

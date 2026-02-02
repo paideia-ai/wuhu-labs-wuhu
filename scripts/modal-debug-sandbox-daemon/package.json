@@ -1,0 +1,11 @@
+{
+  "name": "wuhu-modal-debug-sandbox-daemon",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node ./launch.mjs"
+  },
+  "dependencies": {
+    "modal": "^0.6.1"
+  }
+}

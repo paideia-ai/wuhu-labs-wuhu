@@ -84,6 +84,12 @@ const zGitCheckpointConfig = z
   })
   .passthrough()
 
+const zCorsConfig = z
+  .object({
+    allowedOrigins: z.array(z.string().trim().min(1)),
+  })
+  .passthrough()
+
 const zInitRequest = z
   .object({
     workspace: z
@@ -91,6 +97,7 @@ const zInitRequest = z
         repos: z.array(zInitRepoConfig),
       })
       .passthrough(),
+    cors: zCorsConfig.optional(),
     gitCheckpoint: zGitCheckpointConfig.optional(),
     agent: z.unknown().optional(),
   })
@@ -164,6 +171,7 @@ export function createSandboxDaemonApp(
   const { provider, onCredentials, auth } = options
   const app = new Hono()
   const eventStore = new InMemoryEventStore()
+  let corsAllowedOrigins = new Set<string>()
   const workspace: WorkspaceState = {
     root: options.workspaceRoot ?? Deno.cwd(),
     repos: new Map(),
@@ -172,6 +180,34 @@ export function createSandboxDaemonApp(
   let turnCounter = 0
   let checkpointQueue = Promise.resolve()
 
+  const addCorsHeadersIfAllowed = (c: Context) => {
+    const origin = c.req.header('origin') ?? c.req.header('Origin')
+    if (!origin) return
+    if (!corsAllowedOrigins.has(origin)) return
+
+    c.header('Access-Control-Allow-Origin', origin)
+    const existingVary = c.res.headers.get('Vary')
+    if (!existingVary) {
+      c.header('Vary', 'Origin')
+    } else if (
+      !existingVary.split(',').map((s) => s.trim().toLowerCase()).includes(
+        'origin',
+      )
+    ) {
+      c.header('Vary', `${existingVary}, Origin`)
+    }
+    c.header('Access-Control-Allow-Headers', 'authorization, content-type')
+    c.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  }
+
+  app.use('*', async (c, next) => {
+    addCorsHeadersIfAllowed(c)
+    if (c.req.method === 'OPTIONS') {
+      return c.body(null, 204)
+    }
+    await next()
+  })
+
   const noAuth: MiddlewareHandler = async (_c, next) => {
     await next()
   }
@@ -179,8 +215,8 @@ export function createSandboxDaemonApp(
   if (authEnabled) {
     app.use('*', createJwtMiddleware(auth ?? {}))
   }
-  const requireObserver = authEnabled ? requireScope('observer') : noAuth
-  const requireControl = authEnabled ? requireScope('control') : noAuth
+  const requireUser = authEnabled ? requireScope('user') : noAuth
+  const requireAdmin = authEnabled ? requireScope('admin') : noAuth
 
   provider.onEvent((event) => {
     eventStore.append(event)
@@ -200,7 +236,7 @@ export function createSandboxDaemonApp(
       })
   })
 
-  app.post('/credentials', requireControl, async (c: Context) => {
+  app.post('/credentials', requireAdmin, async (c: Context) => {
     const raw = await readJsonBody(c)
     if (raw === null) {
       return c.json({ ok: false, error: 'invalid_json' }, 400)
@@ -222,7 +258,7 @@ export function createSandboxDaemonApp(
     return c.json({ ok: true })
   })
 
-  app.post('/init', requireControl, async (c: Context) => {
+  app.post('/init', requireAdmin, async (c: Context) => {
     const raw = await readJsonBody(c)
     if (raw === null) {
       return c.json({ ok: false, error: 'invalid_json' }, 400)
@@ -232,6 +268,12 @@ export function createSandboxDaemonApp(
       return c.json({ ok: false, error: 'invalid_init_payload' }, 400)
     }
     const body = parsed.data as SandboxDaemonInitRequest
+
+    if (body.cors?.allowedOrigins) {
+      corsAllowedOrigins = new Set(
+        body.cors.allowedOrigins.map((o) => o.trim()).filter(Boolean),
+      )
+    }
 
     checkpointer.setConfig(body.gitCheckpoint)
 
@@ -263,7 +305,7 @@ export function createSandboxDaemonApp(
     return c.json(response)
   })
 
-  app.post('/prompt', requireControl, async (c: Context) => {
+  app.post('/prompt', requireUser, async (c: Context) => {
     const raw = await readJsonBody(c)
     if (raw === null) {
       return c.json({ success: false, error: 'invalid_prompt_payload' }, 400)
@@ -285,7 +327,7 @@ export function createSandboxDaemonApp(
     return c.json(response)
   })
 
-  app.post('/abort', requireControl, async (c: Context) => {
+  app.post('/abort', requireUser, async (c: Context) => {
     const raw = await readJsonBody(c)
     const parsed = raw === null ? null : zAbortRequest.safeParse(raw)
     const body = parsed?.success
@@ -303,7 +345,7 @@ export function createSandboxDaemonApp(
     return c.json(response)
   })
 
-  app.get('/stream', requireObserver, (c: Context) => {
+  app.get('/stream', requireUser, (c: Context) => {
     const cursorParam = c.req.query('cursor')
     const cursor = cursorParam ? Number(cursorParam) || 0 : 0
     const followParam = c.req.query('follow')
