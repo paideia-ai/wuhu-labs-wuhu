@@ -1,4 +1,5 @@
-import { dirname, fromFileUrl, join, posix } from '@std/path'
+import { dirname, fromFileUrl, join } from '@std/path'
+import { join as posixJoin } from '@std/path/posix'
 import { ModalClient } from 'modal'
 
 type ModalSandbox = Awaited<ReturnType<ModalClient['sandboxes']['create']>>
@@ -35,6 +36,16 @@ async function run(cmd: string, args: string[], options: RunOptions = {}) {
 function randomHex(bytes: number): string {
   const buffer = crypto.getRandomValues(new Uint8Array(bytes))
   return Array.from(buffer, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+const startTime = Date.now()
+let lastTime = startTime
+function logStep(label: string): void {
+  const now = Date.now()
+  const sinceStart = ((now - startTime) / 1000).toFixed(1)
+  const sinceLast = ((now - lastTime) / 1000).toFixed(1)
+  lastTime = now
+  console.log(`[+${sinceStart}s | +${sinceLast}s] ${label}`)
 }
 
 function base64UrlEncodeBytes(bytes: Uint8Array): string {
@@ -100,7 +111,7 @@ async function uploadDir(
   await sb.exec(['mkdir', '-p', remoteDir])
   for await (const entry of Deno.readDir(localDir)) {
     const localPath = join(localDir, entry.name)
-    const remotePath = posix.join(remoteDir, entry.name)
+    const remotePath = posixJoin(remoteDir, entry.name)
     if (entry.isDirectory) {
       await uploadDir(sb, localPath, remotePath)
       continue
@@ -125,10 +136,10 @@ const appName = Deno.env.get('SANDBOX_DAEMON_MODAL_APP') ||
   'wuhu-sandbox-daemon-debug'
 const oneHour = 60 * 60 * 1000
 
-console.log('Bundling sandbox daemon...')
+logStep('Bundling sandbox daemon...')
 await run('deno', ['bundle', '-o', bundlePath, daemonEntry])
 
-console.log('Building sandbox daemon UI...')
+logStep('Building sandbox daemon UI...')
 await run('bun', ['install'], { cwd: uiRoot })
 await run('bun', ['run', 'build'], { cwd: uiRoot })
 
@@ -147,7 +158,9 @@ const ghToken = Deno.env.get('GH_TOKEN')?.trim() ||
   Deno.env.get('GITHUB_TOKEN')?.trim() ||
   ''
 
+logStep('Connecting to Modal...')
 const app = await modal.apps.fromName(appName, { createIfMissing: true })
+logStep(`Modal app ready: ${appName}`)
 let image = modal.images.fromRegistry('node:22-bookworm-slim')
 image = image.dockerfileCommands([
   'RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git unzip && rm -rf /var/lib/apt/lists/*',
@@ -158,11 +171,11 @@ image = image.dockerfileCommands([
   'RUN pi --version || true',
 ])
 
-console.log('Building Modal image...')
+logStep('Building Modal image...')
 const builtImage = await image.build(app)
-console.log('Image built:', builtImage.imageId)
+logStep(`Image built: ${builtImage.imageId}`)
 
-console.log('Creating sandbox (1h idle + 1h timeout)...')
+logStep('Creating sandbox (1h idle + 1h timeout)...')
 const sb = await modal.sandboxes.create(app, builtImage, {
   command: ['sleep', 'infinity'],
   encryptedPorts: [daemonPort, uiPort],
@@ -170,12 +183,13 @@ const sb = await modal.sandboxes.create(app, builtImage, {
   idleTimeoutMs: oneHour,
 })
 
-console.log('Sandbox ID:', sb.sandboxId)
+logStep(`Sandbox ID: ${sb.sandboxId}`)
 
 await sb.exec(['mkdir', '-p', '/root/wuhu-daemon', '/root/workspace'])
 await sb.exec(['mkdir', '-p', '/root/wuhu-ui/dist'])
 
 const remoteBundlePath = '/root/wuhu-daemon/sandbox-daemon.bundle.js'
+logStep('Uploading daemon bundle...')
 await uploadFile(sb, remoteBundlePath, bundleBytes)
 
 const serverScript = `import http from 'node:http'
@@ -232,7 +246,9 @@ server.listen(port, '0.0.0.0', () => {
 })
 `
 
+logStep('Uploading UI assets...')
 await uploadDir(sb, uiDist, '/root/wuhu-ui/dist')
+logStep('Uploading UI server script...')
 await uploadFile(
   sb,
   '/root/wuhu-ui/server.mjs',
@@ -271,6 +287,7 @@ const userToken = jwtEnabled
   )
   : null
 
+logStep('Starting sandbox daemon...')
 await sb.exec(['deno', 'run', '-A', remoteBundlePath], {
   env: {
     SANDBOX_DAEMON_HOST: '0.0.0.0',
@@ -283,6 +300,7 @@ await sb.exec(['deno', 'run', '-A', remoteBundlePath], {
   },
 })
 
+logStep('Starting UI server...')
 await sb.exec(['node', '/root/wuhu-ui/server.mjs'], {
   env: {
     PORT: String(uiPort),
@@ -290,8 +308,10 @@ await sb.exec(['node', '/root/wuhu-ui/server.mjs'], {
   },
 })
 
+logStep('Waiting for services to settle...')
 await new Promise((resolve) => setTimeout(resolve, 2000))
 
+logStep('Fetching tunnels...')
 const tunnels = await sb.tunnels(60_000)
 const daemonUrl = tunnels[daemonPort].url.replace(/\/$/, '')
 const uiUrl = tunnels[uiPort].url.replace(/\/$/, '')
@@ -301,6 +321,7 @@ const initHeaders: HeadersInit = {
   'content-type': 'application/json',
   ...(adminToken ? { authorization: `Bearer ${adminToken}` } : {}),
 }
+logStep('Calling /init for CORS allowlist...')
 const initRes = await fetch(`${daemonUrl}/init`, {
   method: 'POST',
   headers: initHeaders,
@@ -314,6 +335,7 @@ if (!initRes.ok) {
 }
 
 if (jwtEnabled && (ghToken || openAiKey)) {
+  logStep('Sending /credentials to daemon...')
   await fetch(`${daemonUrl}/credentials`, {
     method: 'POST',
     headers: {
@@ -328,9 +350,8 @@ if (jwtEnabled && (ghToken || openAiKey)) {
   })
 }
 
+logStep('Sandbox daemon ready')
 console.log('\n========================================')
-console.log('Sandbox daemon ready')
-console.log('========================================\n')
 console.log('Daemon URL:', daemonUrl)
 console.log('UI URL:', uiUrl)
 if (jwtEnabled) {
