@@ -1,5 +1,6 @@
 import { Hono } from '@hono/hono'
 import { streamSSE } from '@hono/hono/streaming'
+import { z } from 'zod'
 
 import type { AgentProvider } from './agent-provider.ts'
 import type {
@@ -16,17 +17,75 @@ import type {
 
 import type { Context } from '@hono/hono'
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-async function readJsonBody<T>(c: Context): Promise<T | null> {
+async function readJsonBody(c: Context): Promise<unknown | null> {
   try {
-    return await c.req.json<T>()
+    return await c.req.json()
   } catch {
     return null
   }
 }
+
+const zCredentialsPayload = z
+  .object({
+    version: z.string(),
+    llm: z
+      .object({
+        anthropicApiKey: z.union([z.string(), z.null()]).optional(),
+        openaiApiKey: z.union([z.string(), z.null()]).optional(),
+      })
+      .passthrough()
+      .optional(),
+    github: z
+      .object({
+        token: z.string(),
+        username: z.string().optional(),
+        email: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+    extra: z
+      .object({
+        env: z.record(z.string(), z.unknown()).optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough()
+
+const zInitRepoConfig = z
+  .object({
+    id: z.string(),
+    source: z.string(),
+    path: z.string(),
+    branch: z.string().optional(),
+  })
+  .passthrough()
+
+const zInitRequest = z
+  .object({
+    workspace: z
+      .object({
+        repos: z.array(zInitRepoConfig),
+      })
+      .passthrough(),
+    gitCheckpoint: z.unknown().optional(),
+    agent: z.unknown().optional(),
+  })
+  .passthrough()
+
+const zPromptRequest = z
+  .object({
+    message: z.string(),
+    images: z.array(z.unknown()).optional(),
+    streamingBehavior: z.enum(['steer', 'followUp']).optional(),
+  })
+  .passthrough()
+
+const zAbortRequest = z
+  .object({
+    reason: z.string().optional(),
+  })
+  .passthrough()
 
 interface EventRecord {
   cursor: number
@@ -86,10 +145,15 @@ export function createSandboxDaemonApp(
   })
 
   app.post('/credentials', async (c: Context) => {
-    const payload = await readJsonBody<SandboxDaemonCredentialsPayload>(c)
-    if (!payload || !isRecord(payload)) {
+    const raw = await readJsonBody(c)
+    if (raw === null) {
       return c.json({ ok: false, error: 'invalid_json' }, 400)
     }
+    const parsed = zCredentialsPayload.safeParse(raw)
+    if (!parsed.success) {
+      return c.json({ ok: false, error: 'invalid_credentials_payload' }, 400)
+    }
+    const payload = parsed.data as SandboxDaemonCredentialsPayload
     if (onCredentials) {
       try {
         await onCredentials(payload)
@@ -103,39 +167,37 @@ export function createSandboxDaemonApp(
   })
 
   app.post('/init', async (c: Context) => {
-    const body = await readJsonBody<SandboxDaemonInitRequest>(c)
-    if (!body || !isRecord(body)) {
+    const raw = await readJsonBody(c)
+    if (raw === null) {
       return c.json({ ok: false, error: 'invalid_json' }, 400)
     }
-    if (
-      !isRecord(body.workspace) ||
-      !Array.isArray((body.workspace as { repos?: unknown }).repos)
-    ) {
+    const parsed = zInitRequest.safeParse(raw)
+    if (!parsed.success) {
       return c.json({ ok: false, error: 'invalid_init_payload' }, 400)
     }
+    const body = parsed.data as SandboxDaemonInitRequest
     const response: SandboxDaemonInitResponse = {
       ok: true,
       workspace: {
-        repos: body.workspace.repos
-          .filter((repo) =>
-            isRecord(repo) &&
-            typeof repo.id === 'string' &&
-            typeof repo.path === 'string'
-          )
-          .map((repo) => ({
-            id: repo.id,
-            path: repo.path,
-          })),
+        repos: body.workspace.repos.map((repo) => ({
+          id: repo.id,
+          path: repo.path,
+        })),
       },
     }
     return c.json(response)
   })
 
   app.post('/prompt', async (c: Context) => {
-    const body = await readJsonBody<SandboxDaemonPromptRequest>(c)
-    if (!body || !isRecord(body) || typeof body.message !== 'string') {
+    const raw = await readJsonBody(c)
+    if (raw === null) {
       return c.json({ success: false, error: 'invalid_prompt_payload' }, 400)
     }
+    const parsed = zPromptRequest.safeParse(raw)
+    if (!parsed.success) {
+      return c.json({ success: false, error: 'invalid_prompt_payload' }, 400)
+    }
+    const body = parsed.data as SandboxDaemonPromptRequest
     try {
       await provider.sendPrompt(body)
     } catch {
@@ -149,7 +211,11 @@ export function createSandboxDaemonApp(
   })
 
   app.post('/abort', async (c: Context) => {
-    const body = (await readJsonBody<SandboxDaemonAbortRequest>(c)) ?? undefined
+    const raw = await readJsonBody(c)
+    const parsed = raw === null ? null : zAbortRequest.safeParse(raw)
+    const body = parsed?.success
+      ? (parsed.data as SandboxDaemonAbortRequest)
+      : undefined
     try {
       await provider.abort(body)
     } catch {

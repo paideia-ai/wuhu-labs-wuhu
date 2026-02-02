@@ -4,7 +4,8 @@
     "jsr:@hono/hono@4": "4.11.7",
     "jsr:@std/assert@1": "1.0.18",
     "jsr:@std/internal@^1.0.12": "1.0.12",
-    "jsr:@std/path@1": "1.1.4"
+    "jsr:@std/path@1": "1.1.4",
+    "npm:zod@4.3.6": "4.3.6"
   },
   "jsr": {
     "@hono/hono@4.11.7": {
@@ -26,12 +27,18 @@
       ]
     }
   },
+  "npm": {
+    "zod@4.3.6": {
+      "integrity": "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="
+    }
+  },
   "workspace": {
     "members": {
       "packages/sandbox-daemon": {
         "dependencies": [
           "jsr:@hono/hono@4",
-          "jsr:@std/assert@1"
+          "jsr:@std/assert@1",
+          "npm:zod@4.3.6"
         ]
       }
     }
