@@ -175,6 +175,15 @@ export function reduceEnvelope(
   envelope: StreamEnvelope<SandboxDaemonEvent>,
 ): UiState {
   const { event, cursor } = envelope
+
+  if (event.source === 'daemon' && event.type === 'reset') {
+    return { ...initialUiState }
+  }
+
+  if (event.source === 'daemon' && event.type === 'clear_activities') {
+    return { ...state, activities: [] }
+  }
+
   const next: UiState = { ...state, cursor, lastEventType: event.type }
 
   const agentEvent = coerceAgentEvent(event)
@@ -267,4 +276,3 @@ export function reduceEnvelopes(
     base,
   )
 }
-

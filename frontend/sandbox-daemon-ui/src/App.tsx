@@ -241,6 +241,16 @@ export default function App() {
     })
   }
 
+  const clearActivities = () => {
+    dispatchEnvelope({
+      cursor: state.cursor,
+      event: {
+        source: 'daemon',
+        type: 'clear_activities',
+      } as any,
+    })
+  }
+
   const handlePromptKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -263,42 +273,39 @@ export default function App() {
           <div className='status__label'>Connection</div>
           <div className='status__value'>{connectionStatus}</div>
           <div className='status__meta'>Agent: {state.agentStatus}</div>
+          <div className='status__meta'>Cursor: {state.cursor}</div>
+          <div className='status__meta'>
+            Last event: {state.lastEventType || 'None'}
+          </div>
         </div>
       </header>
 
-      <section className='layout'>
-        <div className='panel controls'>
-          <div className='panel__header'>
-            <h2>Connect</h2>
-          </div>
-          <div className='controls__grid'>
-            <label>
-              <span>Daemon URL</span>
-              <input
-                type='text'
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder='https://...modal.host'
-              />
-            </label>
-            <label>
-              <span>JWT (optional)</span>
-              <input
-                type='text'
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder='Bearer token for /init, /prompt, /stream'
-              />
-            </label>
-          </div>
-          <div className='controls__actions'>
-            <button
-              type='button'
-              className='primary'
-              onClick={startStream}
-              disabled={!baseUrl || streaming}
-            >
-              Connect &amp; Follow
+      <section className='panel grid'>
+        <div className='panel__block'>
+          <label htmlFor='base-url'>Daemon base URL</label>
+          <input
+            id='base-url'
+            type='url'
+            placeholder='https://xxxx.modal.host'
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(normalizeBaseUrl(e.target.value))}
+          />
+        </div>
+        <div className='panel__block'>
+          <label htmlFor='token'>JWT (optional)</label>
+          <input
+            id='token'
+            type='password'
+            placeholder='Bearer token for production'
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+        </div>
+        <div className='panel__block panel__actions'>
+          <label>Connection controls</label>
+          <div className='actions'>
+            <button type='button' onClick={startStream} disabled={streaming}>
+              Connect
             </button>
             <button
               type='button'
@@ -308,192 +315,176 @@ export default function App() {
             >
               Disconnect
             </button>
-            <p className='helper'>
-              Status: {connectionStatus} — last event: {state.lastEventType ||
-                'n/a'}
-            </p>
           </div>
+          <p className='helper'>
+            Status: {connectionStatus}
+          </p>
         </div>
+      </section>
 
-        <section className='workspace'>
-          <div className='panel chat'>
-            <div className='panel__header chat__header'>
-              <div>
-                <h2>Agent Thread</h2>
-                <p className='subtext small'>
-                  Messages stream from the daemon. Use Shift+Enter for a new
-                  line.
-                </p>
-              </div>
-              <div className='controls'>
-                <button
-                  type='button'
-                  className='ghost'
-                  onClick={handleAbort}
-                  disabled={!baseUrl}
-                >
-                  Abort
-                </button>
-                <button type='button' onClick={clearConversation}>
-                  Clear
-                </button>
-              </div>
+      <section className='workspace'>
+        <div className='panel chat'>
+          <div className='panel__header chat__header'>
+            <div>
+              <h2>Agent Thread</h2>
+              <p className='subtext small'>
+                Messages stream from the daemon. Use Shift+Enter for a new line.
+              </p>
             </div>
-
-            <div className='chat__log' ref={logRef}>
-              {state.messages.length === 0
-                ? (
-                  <div className='chat__empty'>
-                    No messages yet. Connect to the daemon and send a prompt.
-                  </div>
-                )
-                : (
-                  state.messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`message message--${message.role} ${
-                        message.status === 'streaming'
-                          ? 'message--streaming'
-                          : ''
-                      }`}
-                    >
-                      <div className='message__meta'>
-                        <span>{message.title || message.role}</span>
-                        {message.status === 'streaming'
-                          ? (
-                            <span className='message__status'>typing</span>
-                          )
-                          : null}
-                        {message.timestamp
-                          ? <span>{message.timestamp}</span>
-                          : null}
-                      </div>
-                      <div className='message__bubble'>
-                        {message.title &&
-                            (message.role === 'system' ||
-                              message.role === 'tool')
-                          ? (
-                            <div className='message__title'>
-                              {message.title}
-                            </div>
-                          )
-                          : null}
-                        <div className='message__text'>
-                          {message.text ||
-                            (message.status === 'streaming' ? '...' : '')}
-                        </div>
-                        {message.toolCalls && message.toolCalls.length
-                          ? (
-                            <div className='message__tools'>
-                              {message.toolCalls.map((tool) => (
-                                <span
-                                  key={tool.id}
-                                  className='tool-chip'
-                                >
-                                  {tool.name}
-                                </span>
-                              ))}
-                            </div>
-                          )
-                          : null}
-                        {message.thinking
-                          ? (
-                            <details className='message__thinking'>
-                              <summary>Reasoning</summary>
-                              <pre>{message.thinking}</pre>
-                            </details>
-                          )
-                          : null}
-                      </div>
-                    </div>
-                  ))
-                )}
-            </div>
-
-            <form
-              className='composer'
-              onSubmit={(event) => {
-                event.preventDefault()
-                void handleSendPrompt()
-              }}
-            >
-              <textarea
-                rows={3}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={handlePromptKeyDown}
-                placeholder='Describe the coding task you want the agent to do...'
-              />
-              <div className='composer__actions'>
-                <span className='composer__hint'>Shift+Enter for new line</span>
-                <button
-                  type='submit'
-                  className='primary'
-                  disabled={!prompt.trim() || !baseUrl}
-                >
-                  Send
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <aside className='panel side'>
-            <div className='panel__header'>
-              <h2>Activity</h2>
+            <div className='controls'>
               <button
                 type='button'
                 className='ghost'
-                onClick={() => {
-                  // Clear activities by reducing a synthetic reset event.
-                  // The reducer does not special-case it; we rely on re-render
-                  // from local state reset here.
-                  // eslint-disable-next-line no-console
-                  console.log('Clearing activity log')
-                }}
-                disabled={state.activities.length === 0}
+                onClick={handleAbort}
+                disabled={!baseUrl}
               >
+                Abort
+              </button>
+              <button type='button' onClick={clearConversation}>
                 Clear
               </button>
             </div>
-            <div className='activity'>
-              {state.activities.length === 0
-                ? (
-                  <div className='activity__empty'>
-                    No tool activity yet.
-                  </div>
-                )
-                : (
-                  state.activities.map((item) => (
-                    <div key={item.id} className='activity__card'>
-                      <div className='activity__meta'>
-                        <span
-                          className={`activity__status activity__status--${item.status}`}
-                        >
-                          {item.status}
-                        </span>
-                        <span>{item.toolName}</span>
-                        <span>{item.updatedAt}</span>
+          </div>
+
+          <div className='chat__log' ref={logRef}>
+            {state.messages.length === 0
+              ? (
+                <div className='chat__empty'>
+                  No messages yet. Connect to the daemon and send a prompt.
+                </div>
+              )
+              : (
+                state.messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`message message--${message.role} ${
+                      message.status === 'streaming'
+                        ? 'message--streaming'
+                        : ''
+                    }`}
+                  >
+                    <div className='message__meta'>
+                      <span>{message.title || message.role}</span>
+                      {message.status === 'streaming'
+                        ? <span className='message__status'>typing</span>
+                        : null}
+                      {message.timestamp
+                        ? <span>{message.timestamp}</span>
+                        : null}
+                    </div>
+                    <div className='message__bubble'>
+                      {message.title &&
+                          (message.role === 'system' || message.role === 'tool')
+                        ? <div className='message__title'>{message.title}</div>
+                        : null}
+                      <div className='message__text'>
+                        {message.text ||
+                          (message.status === 'streaming' ? '...' : '')}
                       </div>
-                      {item.output
+                      {message.toolCalls && message.toolCalls.length
                         ? (
-                          <pre className='activity__output'>
-                            {item.output}
-                          </pre>
+                          <div className='message__tools'>
+                            {message.toolCalls.map((tool) => (
+                              <span
+                                key={tool.id || tool.name}
+                                className='tool-chip'
+                              >
+                                {tool.name}
+                              </span>
+                            ))}
+                          </div>
+                        )
+                        : null}
+                      {message.thinking
+                        ? (
+                          <details className='message__thinking'>
+                            <summary>Reasoning</summary>
+                            <pre>{message.thinking}</pre>
+                          </details>
                         )
                         : null}
                     </div>
-                  ))
-                )}
+                  </div>
+                ))
+              )}
+          </div>
+
+          <form
+            className='composer'
+            onSubmit={(event) => {
+              event.preventDefault()
+              void handleSendPrompt()
+            }}
+          >
+            <textarea
+              rows={3}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handlePromptKeyDown}
+              placeholder='Describe the coding task you want the agent to do...'
+            />
+            <div className='composer__actions'>
+              <span className='composer__hint'>Shift+Enter for new line</span>
+              <button
+                type='submit'
+                className='primary'
+                disabled={!prompt.trim() || !baseUrl}
+              >
+                Send
+              </button>
             </div>
-            <div className='side__footer'>
-              <div className='side__tip'>
-                Tip: keep the stream connected so the agent replies land here.
-              </div>
+          </form>
+        </div>
+
+        <aside className='panel side'>
+          <div className='panel__header'>
+            <h2>Activity</h2>
+            <button
+              type='button'
+              className='ghost'
+              onClick={clearActivities}
+              disabled={state.activities.length === 0}
+            >
+              Clear
+            </button>
+          </div>
+          <div className='activity'>
+            {state.activities.length === 0
+              ? (
+                <div className='activity__empty'>
+                  No tool activity yet.
+                </div>
+              )
+              : (
+                state.activities.map((item) => (
+                  <div key={item.id} className='activity__card'>
+                    <div className='activity__meta'>
+                      <span
+                        className={`activity__status activity__status--${item.status}`}
+                      >
+                        {item.status}
+                      </span>
+                      <span>{item.toolName}</span>
+                      <span>{item.updatedAt}</span>
+                    </div>
+                    {item.output
+                      ? (
+                        <pre className='activity__output'>
+                          {item.output}
+                        </pre>
+                      )
+                      : null}
+                  </div>
+                ))
+              )}
+          </div>
+          <div className='side__footer'>
+            <div className='side__tip'>
+              Tip: keep the stream connected so the agent replies land here.
             </div>
-          </aside>
-        </section>
+          </div>
+        </aside>
       </section>
     </div>
   )
 }
-

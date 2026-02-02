@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import type { StreamEnvelope, SandboxDaemonEvent } from './types'
-import { reduceEnvelopes } from './streamReducer'
+import { initialUiState } from './types'
+import { reduceEnvelope, reduceEnvelopes } from './streamReducer'
 
 function parseFixture(): Array<StreamEnvelope<SandboxDaemonEvent>> {
   const path = resolve(__dirname, 'fixtures', 'sample-stream.sse')
@@ -57,5 +58,31 @@ describe('streamReducer', () => {
     const ids = toolMessages.map((m) => m.id)
     const uniqueIds = new Set(ids)
     expect(uniqueIds.size).toBe(ids.length)
+  })
+
+  it('supports clearing UI state via daemon reset event', () => {
+    const base = reduceEnvelopes(envelopes)
+    expect(base.messages.length).toBeGreaterThan(0)
+
+    const reset = reduceEnvelope(base, {
+      cursor: 0,
+      event: { source: 'daemon', type: 'reset' },
+    })
+
+    expect(reset).toEqual(initialUiState)
+  })
+
+  it('supports clearing activity without touching messages', () => {
+    const base = reduceEnvelopes(envelopes)
+    const env: StreamEnvelope<SandboxDaemonEvent> = {
+      cursor: base.cursor,
+      event: { source: 'daemon', type: 'clear_activities' },
+    }
+
+    const next = reduceEnvelope(base, env)
+    expect(next.messages).toEqual(base.messages)
+    expect(next.activities).toEqual([])
+    expect(next.cursor).toBe(base.cursor)
+    expect(next.lastEventType).toBe(base.lastEventType)
   })
 })
