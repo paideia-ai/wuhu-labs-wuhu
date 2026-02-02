@@ -5,6 +5,7 @@
     "jsr:@std/assert@1": "1.0.18",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/path@1": "1.1.4",
+    "npm:modal@*": "0.6.1",
     "npm:modal@0.6.1": "0.6.1",
     "npm:zod@4.3.6": "4.3.6"
   },
