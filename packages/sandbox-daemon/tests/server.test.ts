@@ -52,7 +52,9 @@ Deno.test('GET /stream returns SSE with agent events from cursor', async () => {
   assertEquals(res.status, 200)
   const text = await res.text()
 
-  const dataLines = text.split('\n').filter((line) => line.startsWith('data: '))
+  const dataLines = text.split('\n').filter((line: string) =>
+    line.startsWith('data: ')
+  )
   assertEquals(dataLines.length, 1)
 
   const jsonStr = dataLines[0].slice('data: '.length)
@@ -63,4 +65,3 @@ Deno.test('GET /stream returns SSE with agent events from cursor', async () => {
   assertEquals(envelope.event.type, 'message_update')
   assertEquals(envelope.event.payload.text, 'partial')
 })
-
