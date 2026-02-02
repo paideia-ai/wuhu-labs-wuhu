@@ -1,15 +1,9 @@
-import React, {
-  useEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-} from 'react'
+import React, { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   initialUiState,
-  type UiState,
-  type StreamEnvelope,
   type SandboxDaemonEvent,
+  type StreamEnvelope,
+  type UiState,
 } from './types'
 import { reduceEnvelope } from './streamReducer'
 
@@ -163,8 +157,8 @@ export default function App() {
         }
       }
     } catch (err) {
-      const isAbort =
-        err && typeof err === 'object' && (err as any).name === 'AbortError'
+      const isAbort = err && typeof err === 'object' &&
+        (err as any).name === 'AbortError'
       if (!isAbort) {
         const message = err instanceof Error ? err.message : String(err)
         console.error('Stream error', message)
@@ -251,7 +245,9 @@ export default function App() {
     })
   }
 
-  const handlePromptKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handlePromptKeyDown = (
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       void handleSendPrompt()
@@ -358,9 +354,7 @@ export default function App() {
                   <div
                     key={message.id}
                     className={`message message--${message.role} ${
-                      message.status === 'streaming'
-                        ? 'message--streaming'
-                        : ''
+                      message.status === 'streaming' ? 'message--streaming' : ''
                     }`}
                   >
                     <div className='message__meta'>

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import type { StreamEnvelope, SandboxDaemonEvent } from './types'
+import type { SandboxDaemonEvent, StreamEnvelope } from './types'
 import { initialUiState } from './types'
 import { reduceEnvelope, reduceEnvelopes } from './streamReducer'
 

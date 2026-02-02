@@ -1,11 +1,11 @@
 import type {
   AgentStatus,
+  SandboxDaemonAgentEvent,
+  SandboxDaemonEvent,
+  StreamEnvelope,
   ToolActivity,
   UiMessage,
   UiState,
-  StreamEnvelope,
-  SandboxDaemonAgentEvent,
-  SandboxDaemonEvent,
 } from './types'
 import { initialUiState } from './types'
 
@@ -30,17 +30,19 @@ function extractMessageParts(message: any): {
   toolCalls: { id: string; name: string }[]
   timestamp?: number
 } {
-  const role = typeof message?.role === 'string'
-    ? message.role
-    : 'assistant'
+  const role = typeof message?.role === 'string' ? message.role : 'assistant'
   const timestamp = typeof message?.timestamp === 'number'
     ? message.timestamp
     : undefined
 
-  const parts = { text: '', thinking: '', toolCalls: [] as {
-    id: string
-    name: string
-  }[] }
+  const parts = {
+    text: '',
+    thinking: '',
+    toolCalls: [] as {
+      id: string
+      name: string
+    }[],
+  }
 
   const content = message?.content
   if (typeof content === 'string') {
@@ -70,7 +72,13 @@ function extractMessageParts(message: any): {
     }
   }
 
-  return { role, text: parts.text, thinking: parts.thinking, toolCalls: parts.toolCalls, timestamp }
+  return {
+    role,
+    text: parts.text,
+    thinking: parts.thinking,
+    toolCalls: parts.toolCalls,
+    timestamp,
+  }
 }
 
 function upsertMessage(
@@ -98,12 +106,12 @@ function updateActivityFromEvent(
   ) {
     return activities
   }
-  const id =
-    typeof payload.toolCallId === 'string'
-      ? payload.toolCallId
-      : `tool-${Date.now()}`
-  const toolName =
-    typeof payload.toolName === 'string' ? payload.toolName : 'tool'
+  const id = typeof payload.toolCallId === 'string'
+    ? payload.toolCallId
+    : `tool-${Date.now()}`
+  const toolName = typeof payload.toolName === 'string'
+    ? payload.toolName
+    : 'tool'
   const outputRaw = payload.partialResult ?? payload.result
   let output = ''
   if (outputRaw && typeof outputRaw === 'object') {
@@ -222,26 +230,24 @@ export function reduceEnvelope(
     if (t === 'message_end') status = 'complete'
 
     // Generate a stable-ish id per message by role + timestamp + optional signatures
-    const sig =
-      (message && typeof message.textSignature === 'string'
-        ? message.textSignature
-        : message && typeof message.thinkingSignature === 'string'
-        ? message.thinkingSignature
-        : '') ||
+    const sig = (message && typeof message.textSignature === 'string'
+      ? message.textSignature
+      : message && typeof message.thinkingSignature === 'string'
+      ? message.thinkingSignature
+      : '') ||
       `${role}-${timestamp ?? ''}`
     const id = sig || `msg-${cursor}`
 
     const base: UiMessage = {
       id,
       role: role === 'toolResult' ? 'tool' : (role as any),
-      title:
-        role === 'user'
-          ? 'You'
-          : role === 'assistant'
-          ? 'Agent'
-          : role === 'toolResult'
-          ? message.toolName || 'Tool result'
-          : role,
+      title: role === 'user'
+        ? 'You'
+        : role === 'assistant'
+        ? 'Agent'
+        : role === 'toolResult'
+        ? message.toolName || 'Tool result'
+        : role,
       text,
       thinking,
       toolCalls,

@@ -32,7 +32,9 @@ async function run(cmd: string, args: string[], options: RunOptions = {}) {
     })
     child.on('exit', (code) => {
       if (code === 0) resolve()
-      else reject(new Error(`${cmd} ${args.join(' ')} failed: ${code ?? 'null'}`))
+      else {reject(
+          new Error(`${cmd} ${args.join(' ')} failed: ${code ?? 'null'}`),
+        )}
     })
     child.on('error', reject)
   })
@@ -131,7 +133,12 @@ async function main() {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url))
   const repoRoot = path.dirname(scriptDir)
   const uiRoot = path.join(repoRoot, 'frontend', 'sandbox-daemon-ui')
-  const daemonEntry = path.join(repoRoot, 'packages', 'sandbox-daemon', 'main.ts')
+  const daemonEntry = path.join(
+    repoRoot,
+    'packages',
+    'sandbox-daemon',
+    'main.ts',
+  )
   const bundlePath = await makeTempFile('sandbox-daemon-', '.bundle.js')
 
   const daemonPort = Number(process.env['SANDBOX_DAEMON_PORT'] || 8787)

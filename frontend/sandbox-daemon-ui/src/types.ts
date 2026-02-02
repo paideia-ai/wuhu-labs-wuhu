@@ -81,4 +81,3 @@ export const initialUiState: UiState = {
   lastEventType: undefined,
   agentStatus: 'Idle',
 }
-
