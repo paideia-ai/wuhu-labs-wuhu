@@ -402,6 +402,12 @@ server.listen(port, '0.0.0.0', () => {
   modal.close()
 }
 
-// Run if invoked directly under Bun
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
+// Run if invoked directly
 main()
+  .then(() => {
+    process.exit(0)
+  })
+  .catch((err) => {
+    console.error(err)
+    process.exit(1)
+  })
