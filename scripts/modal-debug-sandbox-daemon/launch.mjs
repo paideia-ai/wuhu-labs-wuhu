@@ -104,91 +104,92 @@ const modal = new ModalClient({
   tokenSecret: requireEnv('MODAL_TOKEN_SECRET'),
 })
 
-const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wuhu-modal-'))
-const bundlePath = path.join(tmpDir, 'sandbox-daemon.bundle.js')
-const uiDistDir = path.join(tmpDir, 'sandbox-daemon-ui-dist')
+try {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wuhu-modal-'))
+  const bundlePath = path.join(tmpDir, 'sandbox-daemon.bundle.js')
+  const uiDistDir = path.join(tmpDir, 'sandbox-daemon-ui-dist')
 
-console.log('Bundling daemon...')
-run('deno', [
-  'bundle',
-  '--platform=deno',
-  '-o',
-  bundlePath,
-  path.join(repoRoot, 'packages/sandbox-daemon/main.ts'),
-], { cwd: repoRoot })
+  console.log('Bundling daemon...')
+  run('deno', [
+    'bundle',
+    '--platform=deno',
+    '-o',
+    bundlePath,
+    path.join(repoRoot, 'packages/sandbox-daemon/main.ts'),
+  ], { cwd: repoRoot })
 
-console.log('Building UI...')
-const uiProjectDir = path.join(repoRoot, 'frontend/sandbox-daemon-ui')
-run('bun', ['install'], { cwd: uiProjectDir })
-run('bun', ['run', 'build'], { cwd: uiProjectDir })
+  console.log('Building UI...')
+  const uiProjectDir = path.join(repoRoot, 'frontend/sandbox-daemon-ui')
+  run('bun', ['install'], { cwd: uiProjectDir })
+  run('bun', ['run', 'build'], { cwd: uiProjectDir })
 
-await fs.rm(uiDistDir, { recursive: true, force: true })
-await fs.mkdir(uiDistDir, { recursive: true })
-await fs.cp(path.join(uiProjectDir, 'dist'), uiDistDir, { recursive: true })
+  await fs.rm(uiDistDir, { recursive: true, force: true })
+  await fs.mkdir(uiDistDir, { recursive: true })
+  await fs.cp(path.join(uiProjectDir, 'dist'), uiDistDir, { recursive: true })
 
-const bundleBytes = await fs.readFile(bundlePath)
+  const bundleBytes = await fs.readFile(bundlePath)
 
-const app = await modal.apps.fromName(appName, { createIfMissing: true })
+  const app = await modal.apps.fromName(appName, { createIfMissing: true })
 
-let image = modal.images.fromRegistry('node:22-bookworm-slim')
-image = image.dockerfileCommands([
-  'RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git unzip && rm -rf /var/lib/apt/lists/*',
-  'RUN npm install -g @mariozechner/pi-coding-agent@0.51.0',
-  `RUN curl -fsSL https://deno.land/install.sh | sh -s v${denoVersion}`,
-  'ENV PATH=/root/.deno/bin:$PATH',
-  'RUN deno --version',
-  'RUN pi --version || true',
-])
+  let image = modal.images.fromRegistry('node:22-bookworm-slim')
+  image = image.dockerfileCommands([
+    'RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git unzip && rm -rf /var/lib/apt/lists/*',
+    'RUN npm install -g @mariozechner/pi-coding-agent@0.51.0',
+    `RUN curl -fsSL https://deno.land/install.sh | sh -s v${denoVersion}`,
+    'ENV PATH=/root/.deno/bin:$PATH',
+    'RUN deno --version',
+    'RUN pi --version || true',
+  ])
 
-console.log('Building image...')
-const builtImage = await image.build(app)
-console.log('Image built:', builtImage.imageId)
+  console.log('Building image...')
+  const builtImage = await image.build(app)
+  console.log('Image built:', builtImage.imageId)
 
-console.log('Creating sandbox (1h idleTimeout + 1h timeout)...')
-const sb = await modal.sandboxes.create(app, builtImage, {
-  command: ['sleep', 'infinity'],
-  encryptedPorts: [DAEMON_PORT, UI_PORT],
-  timeoutMs: oneHour,
-  idleTimeoutMs: oneHour,
-})
+  console.log('Creating sandbox (1h idleTimeout + 1h timeout)...')
+  const sb = await modal.sandboxes.create(app, builtImage, {
+    command: ['sleep', 'infinity'],
+    encryptedPorts: [DAEMON_PORT, UI_PORT],
+    timeoutMs: oneHour,
+    idleTimeoutMs: oneHour,
+  })
 
-console.log('Sandbox ID:', sb.sandboxId)
+  console.log('Sandbox ID:', sb.sandboxId)
 
-await sb.exec([
-  'bash',
-  '-lc',
-  [
-    'set -euo pipefail',
-    'mkdir -p /root/wuhu-daemon /root/wuhu-ui /root/workspace',
-  ].join('\n'),
-])
+  await sb.exec([
+    'bash',
+    '-lc',
+    [
+      'set -euo pipefail',
+      'mkdir -p /root/wuhu-daemon /root/wuhu-ui /root/workspace',
+    ].join('\n'),
+  ])
 
-const remoteBundlePath = '/root/wuhu-daemon/sandbox-daemon.bundle.js'
-console.log('Uploading daemon bundle...')
-const bundleFile = await sb.open(remoteBundlePath, 'w')
-await bundleFile.write(bundleBytes)
-await bundleFile.flush()
-await bundleFile.close()
+  const remoteBundlePath = '/root/wuhu-daemon/sandbox-daemon.bundle.js'
+  console.log('Uploading daemon bundle...')
+  const bundleFile = await sb.open(remoteBundlePath, 'w')
+  await bundleFile.write(bundleBytes)
+  await bundleFile.flush()
+  await bundleFile.close()
 
-console.log('Uploading UI dist/...')
-const remoteUiDist = '/root/wuhu-ui/dist'
-await sb.exec(['mkdir', '-p', remoteUiDist])
+  console.log('Uploading UI dist/...')
+  const remoteUiDist = '/root/wuhu-ui/dist'
+  await sb.exec(['mkdir', '-p', remoteUiDist])
 
-const localUiFiles = await listFilesRecursive(uiDistDir)
-const createdDirs = new Set([remoteUiDist])
-for (const abs of localUiFiles) {
-  const rel = path.relative(uiDistDir, abs)
-  const remotePath = `${remoteUiDist}/${rel.replaceAll(path.sep, '/')}`
-  const remoteDir = remotePath.split('/').slice(0, -1).join('/')
-  if (!createdDirs.has(remoteDir)) {
-    await sb.exec(['mkdir', '-p', remoteDir])
-    createdDirs.add(remoteDir)
+  const localUiFiles = await listFilesRecursive(uiDistDir)
+  const createdDirs = new Set([remoteUiDist])
+  for (const abs of localUiFiles) {
+    const rel = path.relative(uiDistDir, abs)
+    const remotePath = `${remoteUiDist}/${rel.replaceAll(path.sep, '/')}`
+    const remoteDir = remotePath.split('/').slice(0, -1).join('/')
+    if (!createdDirs.has(remoteDir)) {
+      await sb.exec(['mkdir', '-p', remoteDir])
+      createdDirs.add(remoteDir)
+    }
+    await uploadFile(sb, abs, remotePath)
   }
-  await uploadFile(sb, abs, remotePath)
-}
 
-const staticServerPath = '/root/wuhu-ui/server.mjs'
-const staticServerSource = `
+  const staticServerPath = '/root/wuhu-ui/server.mjs'
+  const staticServerSource = `
 import http from 'node:http'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -256,115 +257,122 @@ server.listen(port, '0.0.0.0', () => {
   console.log('ui listening on', port, 'dir=', dir)
 })
 `
-console.log('Uploading static server...')
-const serverFile = await sb.open(staticServerPath, 'w')
-await serverFile.write(Buffer.from(staticServerSource, 'utf8'))
-await serverFile.flush()
-await serverFile.close()
+  console.log('Uploading static server...')
+  const serverFile = await sb.open(staticServerPath, 'w')
+  await serverFile.write(Buffer.from(staticServerSource, 'utf8'))
+  await serverFile.flush()
+  await serverFile.close()
 
-let jwtSecret = ''
-let adminToken = ''
-let userToken = ''
-if (jwtEnabled) {
-  jwtSecret = crypto.randomBytes(32).toString('hex')
-  const now = Math.floor(Date.now() / 1000)
-  adminToken = signHs256Jwt(
-    { sub: 'wuhu', scope: 'admin', exp: now + jwtTtlSeconds },
-    jwtSecret,
-  )
-  userToken = signHs256Jwt(
-    { sub: 'wuhu', scope: 'user', exp: now + jwtTtlSeconds },
-    jwtSecret,
-  )
-}
-
-console.log('Starting daemon...')
-await sb.exec(
-  [
-    'bash',
-    '-lc',
-    `nohup ${denoBin} run -A /root/wuhu-daemon/sandbox-daemon.bundle.js > /root/wuhu-daemon/daemon.log 2>&1 & echo $! > /root/wuhu-daemon/daemon.pid`,
-  ],
-  {
-    env: {
-      SANDBOX_DAEMON_HOST: '0.0.0.0',
-      SANDBOX_DAEMON_PORT: String(DAEMON_PORT),
-      SANDBOX_DAEMON_WORKSPACE_ROOT: '/root/workspace',
-      SANDBOX_DAEMON_JWT_ENABLED: jwtEnabled ? 'true' : 'false',
-      ...(jwtEnabled ? { SANDBOX_DAEMON_JWT_SECRET: jwtSecret } : {}),
-      ...(openAiKey ? { OPENAI_API_KEY: openAiKey } : {}),
-    },
-  },
-)
-
-console.log('Starting UI...')
-await sb.exec([
-  'bash',
-  '-lc',
-  `nohup node ${staticServerPath} --port ${UI_PORT} --dir ${remoteUiDist} > /root/wuhu-ui/ui.log 2>&1 & echo $! > /root/wuhu-ui/ui.pid`,
-])
-
-const tunnels = await sb.tunnels(60_000)
-const daemonBaseUrl = tunnels[DAEMON_PORT].url.replace(/\/$/, '')
-const uiBaseUrl = tunnels[UI_PORT].url.replace(/\/$/, '')
-
-const authHeader = jwtEnabled ? { authorization: `Bearer ${adminToken}` } : {}
-
-console.log('Waiting for daemon to accept requests...')
-await waitForDaemon(daemonBaseUrl, authHeader)
-
-const uiOrigin = new URL(uiBaseUrl).origin
-
-console.log('Initializing daemon (CORS allowlist + empty workspace)...')
-const initRes = await fetch(`${daemonBaseUrl}/init`, {
-  method: 'POST',
-  headers: {
-    ...authHeader,
-    'content-type': 'application/json',
-  },
-  body: JSON.stringify({
-    workspace: { repos: [] },
-    cors: { allowedOrigins: [uiOrigin] },
-  }),
-})
-if (!initRes.ok) {
-  const text = await initRes.text()
-  throw new Error(
-    `init_failed (${initRes.status}): ${text || initRes.statusText}`,
-  )
-}
-
-if (ghToken || openAiKey) {
-  const headers = {
-    'content-type': 'application/json',
-    ...(jwtEnabled ? { authorization: `Bearer ${adminToken}` } : {}),
-  }
-  console.log('Sending credentials...')
-  const res = await fetch(`${daemonBaseUrl}/credentials`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      version: 'modal-debug',
-      llm: openAiKey ? { openaiApiKey: openAiKey } : undefined,
-      github: ghToken ? { token: ghToken } : undefined,
-    }),
-  })
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(
-      `credentials_failed (${res.status}): ${text || res.statusText}`,
+  let jwtSecret = ''
+  let adminToken = ''
+  let userToken = ''
+  if (jwtEnabled) {
+    jwtSecret = crypto.randomBytes(32).toString('hex')
+    const now = Math.floor(Date.now() / 1000)
+    adminToken = signHs256Jwt(
+      { sub: 'wuhu', scope: 'admin', exp: now + jwtTtlSeconds },
+      jwtSecret,
+    )
+    userToken = signHs256Jwt(
+      { sub: 'wuhu', scope: 'user', exp: now + jwtTtlSeconds },
+      jwtSecret,
     )
   }
-}
 
-const uiWithDaemon = `${uiBaseUrl}/?daemon=${encodeURIComponent(daemonBaseUrl)}`
+  console.log('Starting daemon...')
+  await sb.exec(
+    [
+      'bash',
+      '-lc',
+      `nohup ${denoBin} run -A /root/wuhu-daemon/sandbox-daemon.bundle.js > /root/wuhu-daemon/daemon.log 2>&1 & echo $! > /root/wuhu-daemon/daemon.pid`,
+    ],
+    {
+      env: {
+        SANDBOX_DAEMON_HOST: '0.0.0.0',
+        SANDBOX_DAEMON_PORT: String(DAEMON_PORT),
+        SANDBOX_DAEMON_WORKSPACE_ROOT: '/root/workspace',
+        SANDBOX_DAEMON_JWT_ENABLED: jwtEnabled ? 'true' : 'false',
+        ...(jwtEnabled ? { SANDBOX_DAEMON_JWT_SECRET: jwtSecret } : {}),
+        ...(openAiKey ? { OPENAI_API_KEY: openAiKey } : {}),
+      },
+    },
+  )
 
-console.log('')
-console.log('Daemon URL:', daemonBaseUrl)
-console.log('UI URL:', uiWithDaemon)
-if (jwtEnabled) {
-  console.log('ADMIN_BEARER:', adminToken)
-  console.log('USER_BEARER:', userToken)
+  console.log('Starting UI...')
+  await sb.exec([
+    'bash',
+    '-lc',
+    `nohup node ${staticServerPath} --port ${UI_PORT} --dir ${remoteUiDist} > /root/wuhu-ui/ui.log 2>&1 & echo $! > /root/wuhu-ui/ui.pid`,
+  ])
+
+  const tunnels = await sb.tunnels(60_000)
+  const daemonBaseUrl = tunnels[DAEMON_PORT].url.replace(/\/$/, '')
+  const uiBaseUrl = tunnels[UI_PORT].url.replace(/\/$/, '')
+
+  const authHeader = jwtEnabled ? { authorization: `Bearer ${adminToken}` } : {}
+
+  console.log('Waiting for daemon to accept requests...')
+  await waitForDaemon(daemonBaseUrl, authHeader)
+
+  const uiOrigin = new URL(uiBaseUrl).origin
+
+  console.log('Initializing daemon (CORS allowlist + empty workspace)...')
+  const initRes = await fetch(`${daemonBaseUrl}/init`, {
+    method: 'POST',
+    headers: {
+      ...authHeader,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      workspace: { repos: [] },
+      cors: { allowedOrigins: [uiOrigin] },
+    }),
+  })
+  if (!initRes.ok) {
+    const text = await initRes.text()
+    throw new Error(
+      `init_failed (${initRes.status}): ${text || initRes.statusText}`,
+    )
+  }
+
+  if (ghToken || openAiKey) {
+    const headers = {
+      'content-type': 'application/json',
+      ...(jwtEnabled ? { authorization: `Bearer ${adminToken}` } : {}),
+    }
+    console.log('Sending credentials...')
+    const res = await fetch(`${daemonBaseUrl}/credentials`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        version: 'modal-debug',
+        llm: openAiKey ? { openaiApiKey: openAiKey } : undefined,
+        github: ghToken ? { token: ghToken } : undefined,
+      }),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(
+        `credentials_failed (${res.status}): ${text || res.statusText}`,
+      )
+    }
+  }
+
+  const uiWithDaemon = `${uiBaseUrl}/?daemon=${
+    encodeURIComponent(daemonBaseUrl)
+  }`
+
+  console.log('')
+  console.log('Daemon URL:', daemonBaseUrl)
+  console.log('UI URL:', uiWithDaemon)
+  if (jwtEnabled) {
+    console.log('ADMIN_BEARER:', adminToken)
+    console.log('USER_BEARER:', userToken)
+  }
+  console.log('')
+  console.log(
+    'Sandbox will auto-delete in ~1 hour (timeoutMs + idleTimeoutMs).',
+  )
+} finally {
+  modal.close()
 }
-console.log('')
-console.log('Sandbox will auto-delete in ~1 hour (timeoutMs + idleTimeoutMs).')
