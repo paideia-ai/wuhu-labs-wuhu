@@ -11,6 +11,7 @@
   },
   "tasks": {
     "check": "deno check . && deno lint",
-    "test": "deno test -A"
+    "test": "deno test -A",
+    "dev": "deno run -A main.ts"
   }
 }

@@ -7,16 +7,19 @@ class FakePiTransport implements PiTransport {
   readonly lines: string[] = []
   #handlers = new Set<(line: string) => void>()
 
-  async start(): Promise<void> {
+  start(): Promise<void> {
     // No-op for fake transport
+    return Promise.resolve()
   }
 
-  async stop(): Promise<void> {
+  stop(): Promise<void> {
     this.#handlers.clear()
+    return Promise.resolve()
   }
 
-  async send(line: string): Promise<void> {
+  send(line: string): Promise<void> {
     this.lines.push(line)
+    return Promise.resolve()
   }
 
   onLine(handler: (line: string) => void): () => void {

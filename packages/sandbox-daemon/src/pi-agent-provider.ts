@@ -29,15 +29,32 @@ class ProcessPiTransport implements PiTransport {
     this.#args = args
   }
 
-  async start(): Promise<void> {
+  #buildEnv(): Record<string, string> {
+    const env: Record<string, string> = { ...Deno.env.toObject() }
+
+    // Convenience for local development: if no OPENAI_API_KEY is set but a
+    // WUHU_DEV_OPENAI_API_KEY is present, expose it to the pi process. This
+    // keeps the dev-only key out of logs while still wiring it to the agent.
+    if (!env.OPENAI_API_KEY && env.WUHU_DEV_OPENAI_API_KEY) {
+      const trimmed = env.WUHU_DEV_OPENAI_API_KEY.trim()
+      if (trimmed) {
+        env.OPENAI_API_KEY = trimmed
+      }
+    }
+
+    return env
+  }
+
+  start(): Promise<void> {
     if (this.#child) {
-      return
+      return Promise.resolve()
     }
     const cmd = new Deno.Command(this.#command, {
       args: this.#args,
       stdin: 'piped',
       stdout: 'piped',
       stderr: 'inherit',
+      env: this.#buildEnv(),
     })
     const child = cmd.spawn()
     this.#child = child
@@ -68,6 +85,8 @@ class ProcessPiTransport implements PiTransport {
         reader.releaseLock()
       }
     })()
+
+    return Promise.resolve()
   }
 
   async send(line: string): Promise<void> {

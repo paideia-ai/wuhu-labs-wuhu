@@ -4,6 +4,8 @@ import { FakeAgentProvider } from '../src/agent-provider.ts'
 import { createSandboxDaemonApp } from '../src/server.ts'
 import type {
   SandboxDaemonAgentEvent,
+  SandboxDaemonCredentialsPayload,
+  SandboxDaemonInitRequest,
   SandboxDaemonPromptRequest,
   SandboxDaemonStreamEnvelope,
 } from '../src/types.ts'
@@ -29,6 +31,88 @@ Deno.test('POST /prompt forwards to provider and returns success', async () => {
   assertEquals(json, { success: true, command: 'prompt' })
   assertEquals(provider.prompts.length, 1)
   assertEquals(provider.prompts[0].message, 'Hello, daemon')
+})
+
+Deno.test('POST /credentials accepts payload and returns ok', async () => {
+  const provider = new FakeAgentProvider()
+  const { app } = createSandboxDaemonApp({ provider })
+
+  const payload: SandboxDaemonCredentialsPayload = {
+    version: '1',
+    llm: {
+      openaiApiKey: 'test-openai-key',
+    },
+    github: {
+      token: 'ghp_test',
+      username: 'octocat',
+      email: 'octocat@example.com',
+    },
+    extra: {
+      env: {
+        CUSTOM_VAR: 'value',
+      },
+    },
+  }
+
+  const res = await app.request('/credentials', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  assertEquals(res.status, 200)
+  const json = await res.json()
+  assertEquals(json, { ok: true })
+})
+
+Deno.test('POST /init echoes repo summaries with id and path', async () => {
+  const provider = new FakeAgentProvider()
+  const { app } = createSandboxDaemonApp({ provider })
+
+  const payload: SandboxDaemonInitRequest = {
+    workspace: {
+      repos: [
+        {
+          id: 'wuhu',
+          source: 'local:/root/repo',
+          path: 'repo',
+          branch: 'main',
+        },
+        {
+          id: 'pi-mono',
+          source: 'local:/root/pi-mono',
+          path: 'pi-mono',
+        },
+      ],
+    },
+  }
+
+  const res = await app.request('/init', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  assertEquals(res.status, 200)
+  const json = (await res.json()) as {
+    ok: boolean
+    workspace: { repos: Array<{ id: string; path: string; branch?: string }> }
+  }
+
+  assertEquals(json.ok, true)
+  assertEquals(json.workspace.repos.length, 2)
+  assertEquals(json.workspace.repos[0], {
+    id: 'wuhu',
+    path: 'repo',
+  })
+  assertEquals(json.workspace.repos[1], {
+    id: 'pi-mono',
+    path: 'pi-mono',
+  })
 })
 
 Deno.test('GET /stream returns SSE with agent events from cursor', async () => {
