@@ -1,7 +1,10 @@
 import type { Route } from './+types/_index'
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const apiUrl = process.env.API_URL ?? 'http://localhost:3000'
+  const apiUrl = process.env.API_URL
+  if (!apiUrl) {
+    throw new Response('API_URL environment variable is not configured', { status: 500 })
+  }
 
   try {
     const response = await fetch(apiUrl)
