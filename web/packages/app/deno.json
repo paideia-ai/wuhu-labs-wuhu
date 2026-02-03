@@ -1,0 +1,23 @@
+{
+  "name": "@wuhu/app",
+  "exports": "./server.ts",
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "deno.ns"],
+    "types": ["vite/client"],
+    "jsx": "react-jsx",
+    "strict": true
+  },
+  "tasks": {
+    "dev": "deno run -A @wuhu/react-router-deno/dev",
+    "build": "deno run -A @wuhu/react-router-deno/build",
+    "start": "deno run -A server.ts"
+  },
+  "imports": {
+    "@react-router/dev": "npm:@react-router/dev@^7.13",
+    "isbot": "npm:isbot@^5",
+    "react": "npm:react@19",
+    "react-dom": "npm:react-dom@19",
+    "react-router": "npm:react-router@^7.13",
+    "vite": "npm:rolldown-vite@latest"
+  }
+}

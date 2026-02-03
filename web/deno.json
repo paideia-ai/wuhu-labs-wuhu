@@ -1,0 +1,12 @@
+{
+  "workspace": [
+    "./packages/react-router-deno",
+    "./packages/app"
+  ],
+  "nodeModulesDir": "auto",
+  "fmt": {
+    "indentWidth": 2,
+    "semiColons": false,
+    "singleQuote": true
+  }
+}

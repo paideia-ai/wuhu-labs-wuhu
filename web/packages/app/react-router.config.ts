@@ -5,4 +5,6 @@ export default {
   future: {
     v8_viteEnvironmentApi: true,
   },
+  serverModuleFormat: 'esm',
+  appDirectory: 'app',
 } satisfies Config
