@@ -21,6 +21,25 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wuhu_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wuhu_test
+
     steps:
       - name: Setup repo
         uses: actions/checkout@v4
@@ -30,6 +49,20 @@ jobs:
         with:
           cache: true
           deno-version: v2.x
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Prisma setup (core)
+      - name: Generate Prisma client (core)
+        run: deno task prisma:gen
+        working-directory: core
+
+      - name: Push Prisma schema (core)
+        run: deno task prisma:push
+        working-directory: core
 
       # Core checks
       - name: Check formatting (core)
