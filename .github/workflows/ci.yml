@@ -52,17 +52,17 @@ jobs:
         run: deno task coverage:check
         working-directory: core
 
-      # Web checks
+      # Web checks (excludes sandbox-daemon-ui which is not in deno workspace)
       - name: Install dependencies (web)
         run: deno install
         working-directory: web
 
       - name: Check formatting (web)
-        run: deno fmt --check
+        run: deno fmt --check packages/app packages/react-router-deno
         working-directory: web
 
       - name: Check lint (web)
-        run: deno lint
+        run: deno lint packages/app packages/react-router-deno
         working-directory: web
 
       - name: Check types (web)
