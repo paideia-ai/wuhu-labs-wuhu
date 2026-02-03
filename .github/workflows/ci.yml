@@ -7,11 +7,13 @@ on:
       - 'features/*'
     paths:
       - 'core/**'
+      - 'web/**'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
     paths:
       - 'core/**'
+      - 'web/**'
       - '.github/workflows/ci.yml'
 
 jobs:
@@ -27,24 +29,42 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           cache: true
-          deno-version: v2.6.x
+          deno-version: v2.x
 
-      - name: Check formatting
+      # Core checks
+      - name: Check formatting (core)
         run: deno fmt --check
         working-directory: core
 
-      - name: Check lint
+      - name: Check lint (core)
         run: deno lint
         working-directory: core
 
-      - name: Check types
+      - name: Check types (core)
         run: deno task check
         working-directory: core
 
-      - name: Run tests
+      - name: Run tests (core)
         run: deno task test
         working-directory: core
 
-      - name: Check coverage minimum
+      - name: Check coverage minimum (core)
         run: deno task coverage:check
         working-directory: core
+
+      # Web checks
+      - name: Install dependencies (web)
+        run: deno install
+        working-directory: web
+
+      - name: Check formatting (web)
+        run: deno fmt --check
+        working-directory: web
+
+      - name: Check lint (web)
+        run: deno lint
+        working-directory: web
+
+      - name: Check types (web)
+        run: cd packages/app && deno task check
+        working-directory: web
