@@ -77,8 +77,12 @@ Deno.test('SSE follow: multiple subscribers receive same event', async () => {
   const provider = new FakeAgentProvider()
   const { app } = createSandboxDaemonApp({ provider })
 
-  const resA = await app.request('/stream?cursor=0&follow=1', { method: 'GET' })
-  const resB = await app.request('/stream?cursor=0&follow=1', { method: 'GET' })
+  const resA = await app.request('/stream?cursor=0&follow=1', {
+    method: 'GET',
+  })
+  const resB = await app.request('/stream?cursor=0&follow=1', {
+    method: 'GET',
+  })
 
   const event: SandboxDaemonAgentEvent = {
     source: 'agent',

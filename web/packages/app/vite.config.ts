@@ -3,4 +3,10 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [reactRouter()],
+  ssr: {
+    target: 'webworker',
+  },
+  build: {
+    target: 'esnext',
+  },
 })
