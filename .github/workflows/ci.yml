@@ -5,8 +5,14 @@ on:
     branches:
       - main
       - 'features/*'
+    paths:
+      - 'core/**'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'core/**'
+      - '.github/workflows/ci.yml'
 
 jobs:
   ci:
@@ -25,15 +31,20 @@ jobs:
 
       - name: Check formatting
         run: deno fmt --check
+        working-directory: core
 
       - name: Check lint
         run: deno lint
+        working-directory: core
 
       - name: Check types
         run: deno task check
+        working-directory: core
 
       - name: Run tests
         run: deno task test
+        working-directory: core
 
       - name: Check coverage minimum
         run: deno task coverage:check
+        working-directory: core
