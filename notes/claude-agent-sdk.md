@@ -23,23 +23,23 @@ npm install @anthropic-ai/claude-agent-sdk
 ## Basic Usage
 
 ```typescript
-import { query } from '@anthropic-ai/claude-agent-sdk'
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
 for await (
   const message of query({
-    prompt: 'What is 2 + 2?',
+    prompt: "What is 2 + 2?",
     options: {
-      allowedTools: ['Read', 'Glob', 'Grep'],
-      permissionMode: 'default', // or "bypassPermissions" (not as root!)
+      allowedTools: ["Read", "Glob", "Grep"],
+      permissionMode: "default", // or "bypassPermissions" (not as root!)
       maxTurns: 5,
     },
   })
 ) {
-  if (message.type === 'system' && message.subtype === 'init') {
-    console.log('Session ID:', message.session_id)
+  if (message.type === "system" && message.subtype === "init") {
+    console.log("Session ID:", message.session_id);
   }
-  if ('result' in message) {
-    console.log('Result:', message.result)
+  if ("result" in message) {
+    console.log("Result:", message.result);
   }
 }
 ```
@@ -101,14 +101,14 @@ Session index at `~/.claude/projects/<path>/sessions-index.json`.
 
 ```typescript
 interface ClaudeAgentOptions {
-  allowedTools?: string[] // ["Read", "Edit", "Bash", "Task", ...]
-  permissionMode?: 'default' | 'bypassPermissions' | 'acceptEdits' | 'plan'
-  maxTurns?: number // Max API round-trips
-  mcpServers?: Record<string, McpServerConfig>
-  agents?: Record<string, AgentDefinition> // Custom subagents
-  resume?: string // Session ID to resume
-  pathToClaudeCodeExecutable?: string // Custom CLI path (optional)
-  settingSources?: ('user' | 'project' | 'local')[]
+  allowedTools?: string[]; // ["Read", "Edit", "Bash", "Task", ...]
+  permissionMode?: "default" | "bypassPermissions" | "acceptEdits" | "plan";
+  maxTurns?: number; // Max API round-trips
+  mcpServers?: Record<string, McpServerConfig>;
+  agents?: Record<string, AgentDefinition>; // Custom subagents
+  resume?: string; // Session ID to resume
+  pathToClaudeCodeExecutable?: string; // Custom CLI path (optional)
+  settingSources?: ("user" | "project" | "local")[];
 }
 ```
 

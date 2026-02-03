@@ -1,13 +1,13 @@
-import type { AgentProvider } from './agent-provider.ts'
+import type { AgentProvider } from "./agent-provider.ts";
 import type {
   SandboxDaemonAbortRequest,
   SandboxDaemonAgentEvent,
   SandboxDaemonPromptRequest,
-} from './types.ts'
+} from "./types.ts";
 
 export interface LazyAgentProviderFactory<TProvider extends AgentProvider> {
-  create(revision: number): TProvider
-  getRevision(): number
+  create(revision: number): TProvider;
+  getRevision(): number;
 }
 
 /**
@@ -15,77 +15,77 @@ export interface LazyAgentProviderFactory<TProvider extends AgentProvider> {
  * restart it when the factory revision changes (e.g., credentials updated).
  */
 export class LazyAgentProvider implements AgentProvider {
-  #factory: LazyAgentProviderFactory<AgentProvider>
-  #provider?: AgentProvider
-  #providerRevision = -1
-  #eventHandlers = new Set<(event: SandboxDaemonAgentEvent) => void>()
-  #unsubscribeFromProvider?: () => void
-  #started = false
+  #factory: LazyAgentProviderFactory<AgentProvider>;
+  #provider?: AgentProvider;
+  #providerRevision = -1;
+  #eventHandlers = new Set<(event: SandboxDaemonAgentEvent) => void>();
+  #unsubscribeFromProvider?: () => void;
+  #started = false;
 
   constructor(factory: LazyAgentProviderFactory<AgentProvider>) {
-    this.#factory = factory
+    this.#factory = factory;
   }
 
   async start(): Promise<void> {
-    this.#started = true
-    await this.#ensureProvider()
+    this.#started = true;
+    await this.#ensureProvider();
   }
 
   async stop(): Promise<void> {
-    this.#started = false
-    this.#unsubscribeFromProvider?.()
-    this.#unsubscribeFromProvider = undefined
+    this.#started = false;
+    this.#unsubscribeFromProvider?.();
+    this.#unsubscribeFromProvider = undefined;
     if (this.#provider) {
-      await this.#provider.stop()
-      this.#provider = undefined
+      await this.#provider.stop();
+      this.#provider = undefined;
     }
   }
 
   async sendPrompt(request: SandboxDaemonPromptRequest): Promise<void> {
     if (!this.#started) {
-      await this.start()
+      await this.start();
     } else {
-      await this.#ensureProvider()
+      await this.#ensureProvider();
     }
-    await this.#provider!.sendPrompt(request)
+    await this.#provider!.sendPrompt(request);
   }
 
   async abort(request?: SandboxDaemonAbortRequest): Promise<void> {
-    if (!this.#provider) return
-    await this.#provider.abort(request)
+    if (!this.#provider) return;
+    await this.#provider.abort(request);
   }
 
   onEvent(handler: (event: SandboxDaemonAgentEvent) => void): () => void {
-    this.#eventHandlers.add(handler)
+    this.#eventHandlers.add(handler);
     return () => {
-      this.#eventHandlers.delete(handler)
-    }
+      this.#eventHandlers.delete(handler);
+    };
   }
 
   async #ensureProvider(): Promise<void> {
-    const revision = this.#factory.getRevision()
-    const needsCreate = !this.#provider
-    const needsRestart = this.#provider && this.#providerRevision !== revision
+    const revision = this.#factory.getRevision();
+    const needsCreate = !this.#provider;
+    const needsRestart = this.#provider && this.#providerRevision !== revision;
 
-    if (!needsCreate && !needsRestart) return
+    if (!needsCreate && !needsRestart) return;
 
     if (this.#provider) {
-      this.#unsubscribeFromProvider?.()
-      this.#unsubscribeFromProvider = undefined
-      await this.#provider.stop()
-      this.#provider = undefined
+      this.#unsubscribeFromProvider?.();
+      this.#unsubscribeFromProvider = undefined;
+      await this.#provider.stop();
+      this.#provider = undefined;
     }
 
-    const provider = this.#factory.create(revision)
-    this.#provider = provider
-    this.#providerRevision = revision
+    const provider = this.#factory.create(revision);
+    this.#provider = provider;
+    this.#providerRevision = revision;
     this.#unsubscribeFromProvider = provider.onEvent((event) => {
       for (const handler of this.#eventHandlers) {
-        handler(event)
+        handler(event);
       }
-    })
+    });
     if (this.#started) {
-      await provider.start()
+      await provider.start();
     }
   }
 }

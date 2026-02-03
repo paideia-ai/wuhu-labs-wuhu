@@ -1,12 +1,12 @@
-import { reactRouter } from '@react-router/dev/vite'
-import { defineConfig } from 'vite'
+import { reactRouter } from "@react-router/dev/vite";
+import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [reactRouter()],
   ssr: {
-    target: 'webworker',
+    target: "webworker",
   },
   build: {
-    target: 'esnext',
+    target: "esnext",
   },
-})
+});

@@ -4,17 +4,17 @@ on:
   push:
     branches:
       - main
-      - 'features/*'
+      - "features/*"
     paths:
-      - 'core/**'
-      - 'web/**'
-      - '.github/workflows/ci.yml'
+      - "core/**"
+      - "web/**"
+      - ".github/workflows/ci.yml"
   pull_request:
     branches: [main]
     paths:
-      - 'core/**'
-      - 'web/**'
-      - '.github/workflows/ci.yml'
+      - "core/**"
+      - "web/**"
+      - ".github/workflows/ci.yml"
 
 jobs:
   ci:
