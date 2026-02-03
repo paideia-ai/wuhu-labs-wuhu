@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM oven/bun:canary AS build
+FROM oven/bun:1 AS build
 
 WORKDIR /app
 
@@ -22,8 +22,8 @@ COPY --from=build /app/bunfig.toml ./bunfig.toml
 COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY --from=build /app/packages/app/package.json ./packages/app/package.json
 COPY --from=build /app/packages/app/build ./packages/app/build
-
-RUN bun install --frozen-lockfile --production
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages/app/node_modules ./packages/app/node_modules
 
 EXPOSE 3000
 
