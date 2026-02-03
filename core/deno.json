@@ -1,6 +1,7 @@
 {
   "workspace": [
-    "./packages/sandbox-daemon"
+    "./packages/sandbox-daemon",
+    "./packages/server"
   ],
   "fmt": {
     "indentWidth": 2,
