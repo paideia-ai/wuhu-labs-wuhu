@@ -9,5 +9,14 @@
     "indentWidth": 2,
     "semiColons": false,
     "singleQuote": true
+  },
+  "lint": {
+    "rules": {
+      "exclude": [
+        "require-await",
+        "no-slow-types",
+        "no-window"
+      ]
+    }
   }
 }

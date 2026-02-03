@@ -1,7 +1,7 @@
 import { useLoaderData } from 'react-router'
 import type { Route } from './+types/_index.ts'
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader() {
   const apiUrl = Deno.env.get('API_URL')
   if (!apiUrl) {
     throw new Response('API_URL environment variable is not configured', {
@@ -13,7 +13,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const response = await fetch(apiUrl)
     const data = await response.json()
     return { api: data, error: null }
-  } catch (e) {
+  } catch (_e) {
     return { api: null, error: 'Failed to connect to API' }
   }
 }
