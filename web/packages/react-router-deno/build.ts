@@ -1,11 +1,11 @@
-import { createBuilder, version } from 'vite'
+import { createBuilder, version } from "vite";
 
-console.log('vite version:', version)
+console.log("vite version:", version);
 
 const builder = await createBuilder({
-  root: '.',
-  configFile: './vite.config.ts',
-  mode: 'production',
-})
+  root: ".",
+  configFile: "./vite.config.ts",
+  mode: "production",
+});
 
-await builder.buildApp()
+await builder.buildApp();
