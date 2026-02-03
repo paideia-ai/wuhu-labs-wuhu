@@ -1,7 +1,8 @@
-import type { Route } from './+types/_index'
+import { useLoaderData } from 'react-router'
+import type { Route } from './+types/_index.ts'
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const apiUrl = process.env.API_URL
+  const apiUrl = Deno.env.get('API_URL')
   if (!apiUrl) {
     throw new Response('API_URL environment variable is not configured', { status: 500 })
   }
@@ -22,8 +23,8 @@ export function meta({}: Route.MetaArgs) {
   ]
 }
 
-export default function Index({ loaderData }: Route.ComponentProps) {
-  const { api, error } = loaderData
+export default function Index() {
+  const { api, error } = useLoaderData<typeof loader>()
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>

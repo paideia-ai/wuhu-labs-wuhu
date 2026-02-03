@@ -12,6 +12,12 @@ const requestHandler = createRequestHandler(serverBuild, 'production')
 
 const clientDir = new URL('./build/client', import.meta.url).pathname
 
+declare module 'react-router' {
+  interface Future {
+    v8_middleware: true
+  }
+}
+
 Deno.serve({ port: PORT }, async (request) => {
   const url = new URL(request.url)
 

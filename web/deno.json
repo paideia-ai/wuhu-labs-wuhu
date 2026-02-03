@@ -4,6 +4,7 @@
     "./packages/app"
   ],
   "nodeModulesDir": "auto",
+  "unstable": ["sloppy-imports"],
   "fmt": {
     "indentWidth": 2,
     "semiColons": false,
