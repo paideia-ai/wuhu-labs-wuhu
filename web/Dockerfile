@@ -23,7 +23,6 @@ COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY --from=build /app/packages/app/package.json ./packages/app/package.json
 COPY --from=build /app/packages/app/build ./packages/app/build
 COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/packages/app/node_modules ./packages/app/node_modules
 
 EXPOSE 3000
 
