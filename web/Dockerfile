@@ -1,24 +1,28 @@
 # syntax=docker/dockerfile:1
 
-FROM oven/bun:1 AS build
+FROM denoland/deno:latest AS build
 
 WORKDIR /app
 
-COPY package.json bun.lock* bunfig.toml tsconfig.json ./
+COPY deno.json deno.lock ./
 COPY packages ./packages
 
-RUN bun install --frozen-lockfile
-RUN bun run --filter '@wuhu/app' build
+RUN deno install
+RUN cd packages/app && deno task build
 
-FROM oven/bun:1-slim AS production
+FROM denoland/deno:latest AS production
 
 WORKDIR /app
 
-ENV NODE_ENV=production
+# Copy workspace config and dependencies
+COPY --from=build /app/deno.json /app/deno.lock ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages/app/deno.json ./packages/app/deno.json
+COPY --from=build /app/packages/react-router-deno/deno.json ./packages/react-router-deno/deno.json
 
+# Copy app files
 COPY --from=build /app/packages/app/server.ts ./packages/app/server.ts
 COPY --from=build /app/packages/app/build ./packages/app/build
-COPY --from=build /app/node_modules ./node_modules
 
 EXPOSE 3000
 
@@ -26,4 +30,4 @@ ENV PORT=3000
 
 WORKDIR /app/packages/app
 
-CMD ["bun", "server.ts"]
+CMD ["run", "-A", "server.ts"]
