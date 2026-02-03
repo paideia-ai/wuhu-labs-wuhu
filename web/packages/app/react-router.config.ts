@@ -1,4 +1,4 @@
-import type { Config } from "@react-router/dev/config";
+import type { Config } from '@react-router/dev/config'
 
 export default {
   ssr: true,
@@ -6,6 +6,6 @@ export default {
     v8_middleware: true,
     v8_viteEnvironmentApi: true,
   },
-  serverModuleFormat: "esm",
-  appDirectory: "app",
-} satisfies Config;
+  serverModuleFormat: 'esm',
+  appDirectory: 'app',
+} satisfies Config

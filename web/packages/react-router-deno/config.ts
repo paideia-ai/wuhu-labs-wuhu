@@ -1,7 +1,7 @@
-import { reactRouter } from "@react-router/dev/vite";
-import { defineConfig, type UserConfig } from "vite";
+import { reactRouter } from '@react-router/dev/vite'
+import { defineConfig, type UserConfig } from 'vite'
 
-import { resolveDenoImports } from "./resolver/plugin.ts";
+import { resolveDenoImports } from './resolver/plugin.ts'
 
 export function reactRouterDev(): UserConfig {
   return defineConfig({
@@ -9,7 +9,7 @@ export function reactRouterDev(): UserConfig {
       resolveDenoImports(),
       reactRouter(),
     ],
-  });
+  })
 }
 
 export function reactRouterBuild(): UserConfig {
@@ -19,10 +19,10 @@ export function reactRouterBuild(): UserConfig {
       reactRouter(),
     ],
     ssr: {
-      target: "webworker",
+      target: 'webworker',
     },
     build: {
-      target: "esnext",
+      target: 'esnext',
     },
-  });
+  })
 }
