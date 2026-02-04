@@ -16,18 +16,18 @@ function msg(overrides: Partial<UiMessage>): UiMessage {
   }
 }
 
-Deno.test('queuedPromptIsRecordedInCoding matches later user message', () => {
+Deno.test('queuedPromptIsRecordedInCoding matches user message with same text', () => {
   const recorded = queuedPromptIsRecordedInCoding(
     { cursor: 10, message: 'hello' },
-    [msg({ role: 'user', text: 'hello', cursor: 11 })],
+    [msg({ role: 'user', text: 'hello' })],
   )
   assert(recorded)
 })
 
-Deno.test('queuedPromptIsRecordedInCoding does not match earlier user message', () => {
+Deno.test('queuedPromptIsRecordedInCoding does not match different text', () => {
   const recorded = queuedPromptIsRecordedInCoding(
     { cursor: 10, message: 'hello' },
-    [msg({ role: 'user', text: 'hello', cursor: 9 })],
+    [msg({ role: 'user', text: 'goodbye' })],
   )
   assertEquals(recorded, false)
 })
@@ -35,15 +35,17 @@ Deno.test('queuedPromptIsRecordedInCoding does not match earlier user message', 
 Deno.test('queuedPromptIsRecordedInCoding ignores non-user messages', () => {
   const recorded = queuedPromptIsRecordedInCoding(
     { cursor: 10, message: 'hello' },
-    [msg({ role: 'assistant', text: 'hello', cursor: 11 })],
+    [msg({ role: 'assistant', text: 'hello' })],
   )
   assertEquals(recorded, false)
 })
 
-Deno.test('queuedPromptIsRecordedInCoding ignores messages without cursors', () => {
+Deno.test('queuedPromptIsRecordedInCoding matches regardless of cursor values', () => {
+  // Cursors from control and coding streams are independent sequences,
+  // so we should match based on text content only
   const recorded = queuedPromptIsRecordedInCoding(
-    { cursor: 10, message: 'hello' },
-    [msg({ role: 'user', text: 'hello' })],
+    { cursor: 100, message: 'hello' },
+    [msg({ role: 'user', text: 'hello', cursor: 5 })],
   )
-  assertEquals(recorded, false)
+  assert(recorded)
 })
