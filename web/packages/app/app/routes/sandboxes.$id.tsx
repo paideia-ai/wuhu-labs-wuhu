@@ -1,11 +1,17 @@
 import { Form, Link, redirect, useLoaderData } from 'react-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Route } from './+types/sandboxes.$id.ts'
 import {
   abortSandbox,
   sendSandboxPrompt,
   useSandboxStreams,
 } from '~/lib/sandbox/use-sandbox.ts'
+import type { UiMessage } from '~/lib/sandbox/types.ts'
+
+function formatTimestamp(value?: number): string {
+  const date = value ? new Date(value) : new Date()
+  return date.toLocaleTimeString([], { hour12: false })
+}
 
 export async function loader({ params }: Route.LoaderArgs) {
   const apiUrl = Deno.env.get('API_URL')
@@ -45,6 +51,7 @@ export default function SandboxDetail() {
   const { sandbox } = useLoaderData<typeof loader>()
   const { coding, control, connectionStatus } = useSandboxStreams(sandbox.id)
   const [prompt, setPrompt] = useState('')
+  const [pendingPrompts, setPendingPrompts] = useState<UiMessage[]>([])
   const [sendError, setSendError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
@@ -66,6 +73,15 @@ export default function SandboxDetail() {
     setSendError(null)
     setSending(true)
     setPrompt('')
+    const localPrompt: UiMessage = {
+      id: `local-prompt-${Date.now()}`,
+      role: 'user',
+      title: 'You',
+      text,
+      status: 'complete',
+      timestamp: formatTimestamp(),
+    }
+    setPendingPrompts((prev) => [...prev, localPrompt].slice(-20))
     try {
       await sendSandboxPrompt({ sandboxId: sandbox.id, message: text })
     } catch (err) {
@@ -75,6 +91,36 @@ export default function SandboxDetail() {
       setSending(false)
     }
   }
+
+  useEffect(() => {
+    if (!pendingPrompts.length) return
+    const queuedMessages = new Set(control.prompts.map((p) => p.message))
+    setPendingPrompts((prev) => prev.filter((m) => !queuedMessages.has(m.text)))
+  }, [control.prompts, pendingPrompts.length])
+
+  const displayMessages = useMemo(() => {
+    const controlMessages: UiMessage[] = control.prompts.map((p) => ({
+      id: `prompt-${p.cursor}`,
+      role: 'user',
+      title: 'You',
+      text: p.message,
+      status: 'complete',
+      cursor: p.cursor,
+      timestamp: formatTimestamp(p.timestamp),
+    }))
+
+    const all = [...controlMessages, ...coding.messages, ...pendingPrompts]
+    const byId = new Map<string, UiMessage>()
+    for (const m of all) {
+      if (!byId.has(m.id)) byId.set(m.id, m)
+    }
+    return [...byId.values()].sort((a, b) => {
+      const aCursor = a.cursor ?? Number.POSITIVE_INFINITY
+      const bCursor = b.cursor ?? Number.POSITIVE_INFINITY
+      if (aCursor !== bCursor) return aCursor - bCursor
+      return a.id.localeCompare(b.id)
+    })
+  }, [coding.messages, control.prompts, pendingPrompts])
 
   const handleAbort = async () => {
     if (aborting) return
@@ -185,11 +231,11 @@ export default function SandboxDetail() {
               background: '#fafafa',
             }}
           >
-            {coding.messages.length === 0
+            {displayMessages.length === 0
               ? <div style={{ color: '#6b7280' }}>Waiting for messages…</div>
               : (
                 <div style={{ display: 'grid', gap: '0.75rem' }}>
-                  {coding.messages.map((message) => (
+                  {displayMessages.map((message) => (
                     <div
                       key={message.id}
                       style={{
