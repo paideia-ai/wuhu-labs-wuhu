@@ -1,28 +1,8 @@
 # Stage 5: Session Query
 
-## FTS Indexing (Postgres)
+Enables agents to query past sessions for context and learning.
 
-- Index human input
-- Index AI message to human
-- Do NOT index: tool calls, tool results, reasoning/reasoning summary
+## Sub-stages
 
-## HTTP API Endpoints
-
-1. `POST /sessions/search` - FTS query across sessions
-2. `GET /sessions/:id` - Get session log (DB version, not raw - excludes unused metadata)
-
-## CLI Binary for Sandbox
-
-- Deno script bundled and installed by setup script
-- Calls core API from within sandbox
-- Commands:
-  - `wuhu past-sessions query '<keyword>'`
-  - `wuhu past-sessions get <session-id>`
-- Binary instead of MCP because Pi agent doesn't support MCP
-- Can later wrap as local stdio-based MCP if needed
-
-## Validates
-
-- FTS returns relevant sessions
-- Agents can query past sessions from within sandbox
-- CLI works end-to-end
+1. [Stage 5.1: FTS Schema + Core Search API](stage-5.1-fts-search-api.md)
+2. [Stage 5.2: CLI Binary for Sandbox](stage-5.2-sandbox-cli.md)
