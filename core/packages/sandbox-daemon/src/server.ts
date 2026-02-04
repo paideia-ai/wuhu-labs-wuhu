@@ -28,11 +28,13 @@ import type {
   SandboxDaemonStreamEnvelope,
 } from './types.ts'
 import {
+  agentEventsToNdjson,
   convertTurnToMessages,
   defaultCursorPath,
   FileCursorStore,
   type PersistedUiMessage,
   postJsonWithRetry,
+  postNdjsonWithRetry,
 } from './state-persistence.ts'
 
 import type { Context } from '@hono/hono'
@@ -299,21 +301,31 @@ export function createSandboxDaemonApp(
           cursorStore.save()
         }
 
-        if (!pendingMessages.length) return
-
         const base = persistenceSnapshot.coreApiUrl.replace(/\/$/, '')
-        const url = `${base}/sandboxes/${persistenceSnapshot.sandboxId}/state`
-        await postJsonWithRetry(
-          url,
-          { cursor: cursorStore.get(), messages: pendingMessages },
-          {
-            attempts: options.statePersistence?.attempts,
-            baseDelayMs: options.statePersistence?.baseDelayMs,
-            fetchFn: options.statePersistence?.fetchFn,
-            sleep: options.statePersistence?.sleep,
-          },
-        )
-        pendingMessages = []
+        if (pendingMessages.length) {
+          const url = `${base}/sandboxes/${persistenceSnapshot.sandboxId}/state`
+          await postJsonWithRetry(
+            url,
+            { cursor: cursorStore.get(), messages: pendingMessages },
+            {
+              attempts: options.statePersistence?.attempts,
+              baseDelayMs: options.statePersistence?.baseDelayMs,
+              fetchFn: options.statePersistence?.fetchFn,
+              sleep: options.statePersistence?.sleep,
+            },
+          )
+          pendingMessages = []
+        }
+
+        const logsUrl =
+          `${base}/sandboxes/${persistenceSnapshot.sandboxId}/logs?turnIndex=${turn}`
+        const ndjson = agentEventsToNdjson(eventsSnapshot)
+        await postNdjsonWithRetry(logsUrl, ndjson, {
+          attempts: options.statePersistence?.attempts,
+          baseDelayMs: options.statePersistence?.baseDelayMs,
+          fetchFn: options.statePersistence?.fetchFn,
+          sleep: options.statePersistence?.sleep,
+        })
       })
       .catch((err) => {
         warn('state persistence failed (best-effort)', err)

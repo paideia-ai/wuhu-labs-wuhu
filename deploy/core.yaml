@@ -49,6 +49,24 @@ spec:
               value: "paideia-ai,wuhu-labs"
             - name: REDIS_URL
               value: "redis://redis:6379"
+            - name: S3_ENDPOINT
+              value: "http://minio:9000"
+            - name: S3_REGION
+              value: "us-east-1"
+            - name: S3_BUCKET
+              value: "wuhu-raw-logs"
+            - name: S3_FORCE_PATH_STYLE
+              value: "true"
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: root-user
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: root-password
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:

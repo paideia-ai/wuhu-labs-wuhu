@@ -16,6 +16,7 @@ import {
   terminateSandbox,
 } from './src/sandbox-service.ts'
 import { fetchSandboxMessages, persistSandboxState } from './src/state.ts'
+import { RawLogsS3Store } from './src/raw-logs-s3.ts'
 
 const app = new Hono()
 const config = loadConfig()
@@ -25,6 +26,9 @@ const repoService = new RepoService({
   allowedOrgs: config.github.allowedOrgs,
   redisUrl: config.redis.url,
 })
+const rawLogsStore = config.rawLogsS3
+  ? new RawLogsS3Store(config.rawLogsS3)
+  : null
 
 app.use('*', cors())
 
@@ -639,6 +643,94 @@ app.post('/sandboxes/:id/state', async (c) => {
   } catch (error) {
     console.error('Failed to persist sandbox state', error)
     return c.json({ error: 'sandbox_state_persist_failed' }, 500)
+  }
+})
+
+app.post('/sandboxes/:id/logs', async (c) => {
+  if (!rawLogsStore) {
+    return c.json({ error: 'raw_logs_s3_not_configured' }, 503)
+  }
+  const id = c.req.param('id')
+  const turnIndexRaw = c.req.query('turnIndex')
+  const parsedTurnIndex = turnIndexRaw ? Number(turnIndexRaw) : NaN
+  const turnIndex = Number.isFinite(parsedTurnIndex)
+    ? Math.floor(parsedTurnIndex)
+    : NaN
+  if (!Number.isInteger(turnIndex) || turnIndex < 0) {
+    return c.json({ error: 'invalid_turn_index' }, 400)
+  }
+
+  try {
+    const record = await getSandbox(id)
+    if (!record) return c.json({ error: 'not_found' }, 404)
+  } catch (error) {
+    console.error('Failed to lookup sandbox for raw logs upload', error)
+    return c.json({ error: 'sandbox_lookup_failed' }, 500)
+  }
+
+  const body = c.req.raw.body
+  if (!body) return c.json({ error: 'missing_body' }, 400)
+  const contentType = (c.req.header('content-type') ?? 'application/x-ndjson')
+    .split(';')[0]
+    ?.trim() || 'application/x-ndjson'
+  const returnUrlRaw = (c.req.query('returnUrl') ?? '').trim().toLowerCase()
+  const returnUrl = returnUrlRaw === '1' || returnUrlRaw === 'true' ||
+    returnUrlRaw === 'yes'
+
+  try {
+    const { key } = await rawLogsStore.uploadTurn(
+      id,
+      turnIndex,
+      body,
+      contentType,
+    )
+    if (!returnUrl) return c.json({ ok: true })
+    const { url, expiresIn } = await rawLogsStore.presignGetTurn(
+      id,
+      turnIndex,
+    )
+    return c.json({ ok: true, key, url, expiresIn })
+  } catch (error) {
+    console.error('Failed to upload raw logs to S3', error)
+    return c.json({ error: 'raw_logs_upload_failed' }, 500)
+  }
+})
+
+app.get('/sandboxes/:id/logs/:turnIndex', async (c) => {
+  if (!rawLogsStore) {
+    return c.json({ error: 'raw_logs_s3_not_configured' }, 503)
+  }
+  const id = c.req.param('id')
+  const turnIndexRaw = c.req.param('turnIndex')
+  const parsedTurnIndex = Number(turnIndexRaw)
+  const turnIndex = Number.isFinite(parsedTurnIndex)
+    ? Math.floor(parsedTurnIndex)
+    : NaN
+  if (!Number.isInteger(turnIndex) || turnIndex < 0) {
+    return c.json({ error: 'invalid_turn_index' }, 400)
+  }
+
+  try {
+    const record = await getSandbox(id)
+    if (!record) return c.json({ error: 'not_found' }, 404)
+  } catch (error) {
+    console.error('Failed to lookup sandbox for raw logs presign', error)
+    return c.json({ error: 'sandbox_lookup_failed' }, 500)
+  }
+
+  const expiresInRaw = Number(c.req.query('expiresIn') ?? '0')
+  const expiresIn = Number.isFinite(expiresInRaw) && expiresInRaw > 0
+    ? Math.floor(expiresInRaw)
+    : undefined
+
+  try {
+    const exists = await rawLogsStore.existsTurn(id, turnIndex)
+    if (!exists) return c.json({ error: 'not_found' }, 404)
+    const signed = await rawLogsStore.presignGetTurn(id, turnIndex, expiresIn)
+    return c.json(signed)
+  } catch (error) {
+    console.error('Failed to presign raw logs url', error)
+    return c.json({ error: 'raw_logs_presign_failed' }, 500)
   }
 })
 
