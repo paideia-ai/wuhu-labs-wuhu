@@ -18,13 +18,15 @@
 ## Task Creation
 
 - Now includes initial prompt (repo already added in Stage 2)
-- Prompt is sent to Pi agent on sandbox start
+- Core passes the initial prompt to the daemon during `/init`
+- Daemon stores it and fires the prompt only after repo initialization finishes
 
 ## LLM Credentials
 
 - Core passes LLM API keys to sandbox daemon via `POST /credentials`
   - `llm.openaiApiKey` (from core env)
   - `llm.anthropicApiKey` (from core env)
+  - Call early in sandbox startup so the daemon can configure agent providers
 
 ## Agent Chat UI
 
