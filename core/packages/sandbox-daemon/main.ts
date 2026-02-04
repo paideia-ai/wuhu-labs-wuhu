@@ -89,6 +89,23 @@ const previewRoot = Deno.env.get('SANDBOX_DAEMON_PREVIEW_ROOT') ??
 
 const credentials = new InMemoryCredentialsStore()
 
+class InMemoryPiCwdStore {
+  #cwd?: string
+  #revision = 0
+
+  set(cwd: string | undefined): void {
+    if (cwd === this.#cwd) return
+    this.#cwd = cwd
+    this.#revision++
+  }
+
+  get(): { cwd?: string; revision: number } {
+    return { cwd: this.#cwd, revision: this.#revision }
+  }
+}
+
+const piCwdStore = new InMemoryPiCwdStore()
+
 const envOpenAiKey = readEnvTrimmed('OPENAI_API_KEY') ??
   readEnvTrimmed('WUHU_DEV_OPENAI_API_KEY')
 const envAnthropicKey = readEnvTrimmed('ANTHROPIC_API_KEY')
@@ -106,7 +123,11 @@ if (envOpenAiKey || envAnthropicKey) {
 const provider = agentMode === 'mock'
   ? new MockAgentProvider()
   : new LazyAgentProvider({
-    getRevision: () => credentials.get().revision,
+    getRevision: () => {
+      const credRevision = credentials.get().revision
+      const cwdRevision = piCwdStore.get().revision
+      return credRevision * 1_000_000 + cwdRevision
+    },
     create: () => {
       const snapshot = credentials.get()
       const piArgs = config.pi.args ??
@@ -115,7 +136,7 @@ const provider = agentMode === 'mock'
         command: config.pi.command,
         args: piArgs,
       })
-      const cwd = config.pi.cwd
+      const cwd = piCwdStore.get().cwd
       return new PiAgentProvider({
         command,
         args,
@@ -159,7 +180,9 @@ const { app } = createSandboxDaemonApp({
   onCredentials: async (payload) => {
     applyCredentialsToEnv(payload)
     credentials.set(payload)
-    await provider.start()
+  },
+  onInit: ({ primaryRepo }) => {
+    piCwdStore.set(primaryRepo?.absPath)
   },
   auth: config.jwt.enabled
     ? { secret: config.jwt.secret, issuer: config.jwt.issuer, enabled: true }
@@ -167,14 +190,6 @@ const { app } = createSandboxDaemonApp({
   workspaceRoot: config.workspaceRoot,
   onShutdown: shutdown,
 })
-
-try {
-  await provider.start()
-} catch {
-  console.error(
-    'sandbox-daemon: agent provider failed to start (install `pi` or set SANDBOX_DAEMON_AGENT_MODE=mock)',
-  )
-}
 
 servers.preview = Deno.serve({
   hostname: '0.0.0.0',

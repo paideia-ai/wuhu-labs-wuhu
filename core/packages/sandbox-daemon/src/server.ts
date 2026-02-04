@@ -156,6 +156,12 @@ export interface SandboxDaemonServerOptions {
   onCredentials?: (
     payload: SandboxDaemonCredentialsPayload,
   ) => void | Promise<void>
+  onInit?: (info: {
+    workspaceRoot: string
+    repos: Array<{ id: string; absPath: string }>
+    primaryRepo?: { id: string; absPath: string }
+    request: SandboxDaemonInitRequest
+  }) => void | Promise<void>
   auth?: JwtAuthOptions
   workspaceRoot?: string
   onShutdown?: () => void | Promise<void>
@@ -169,7 +175,7 @@ export interface SandboxDaemonApp {
 export function createSandboxDaemonApp(
   options: SandboxDaemonServerOptions,
 ): SandboxDaemonApp {
-  const { provider, onCredentials, auth, onShutdown } = options
+  const { provider, onCredentials, onInit, auth, onShutdown } = options
   const app = new Hono()
   const eventStore = new InMemoryEventStore()
   const workspace: WorkspaceState = {
@@ -294,6 +300,7 @@ export function createSandboxDaemonApp(
     }
 
     const summaries = []
+    const repoStates: Array<{ id: string; absPath: string }> = []
     for (const repo of body.workspace.repos) {
       try {
         const state = await ensureRepo(
@@ -302,6 +309,7 @@ export function createSandboxDaemonApp(
           (event) => eventStore.append(event),
         )
         workspace.repos.set(repo.id, state)
+        repoStates.push({ id: state.id, absPath: state.absPath })
         const currentBranch = await getCurrentBranch(state.absPath)
         summaries.push({ id: repo.id, path: repo.path, currentBranch })
       } catch {
@@ -317,6 +325,26 @@ export function createSandboxDaemonApp(
           { ok: false, error: 'repo_clone_error', repoId: repo.id },
           500,
         )
+      }
+    }
+
+    if (onInit) {
+      const primaryRepo = repoStates[0]
+      try {
+        await onInit({
+          workspaceRoot: workspace.root,
+          repos: repoStates,
+          primaryRepo,
+          request: body,
+        })
+      } catch (err) {
+        eventStore.append({
+          source: 'daemon',
+          type: 'daemon_error',
+          timestamp: Date.now(),
+          error: 'init_hook_error',
+          detail: err instanceof Error ? err.message : String(err),
+        })
       }
     }
 
