@@ -59,6 +59,7 @@ export type SandboxDaemonAgentMode = 'pi-rpc' | 'mock'
 
 export interface SandboxDaemonAgentConfig {
   mode: SandboxDaemonAgentMode
+  initialPrompt?: string
 }
 
 export interface SandboxDaemonInitRequest {

@@ -205,7 +205,7 @@ button.primary {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 2.1fr) minmax(240px, 1fr);
+  grid-template-columns: minmax(0, 2.6fr) minmax(220px, 0.9fr);
   gap: 24px;
 }
 
@@ -213,14 +213,14 @@ button.primary {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  min-height: 520px;
+  min-height: 600px;
 }
 
 .chat__log {
   border: 1px dashed var(--border);
   border-radius: 18px;
   padding: 18px;
-  max-height: 560px;
+  max-height: 660px;
   overflow-y: auto;
   background: #fffdf7;
   display: flex;

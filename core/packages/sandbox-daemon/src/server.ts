@@ -84,6 +84,13 @@ const zGitCheckpointConfig = z
   })
   .passthrough()
 
+const zInitAgentConfig = z
+  .object({
+    mode: z.enum(['pi-rpc', 'mock']).optional(),
+    initialPrompt: z.string().optional(),
+  })
+  .passthrough()
+
 const zInitRequest = z
   .object({
     workspace: z
@@ -98,7 +105,7 @@ const zInitRequest = z
       .passthrough()
       .optional(),
     gitCheckpoint: zGitCheckpointConfig.optional(),
-    agent: z.unknown().optional(),
+    agent: zInitAgentConfig.optional(),
   })
   .passthrough()
 
@@ -179,6 +186,7 @@ export function createSandboxDaemonApp(
   let corsAllowedOrigins = new Set<string>()
   let turnCounter = 0
   let checkpointQueue = Promise.resolve()
+  let pendingInitialPrompt: string | null = null
 
   const noAuth: MiddlewareHandler = async (_c, next) => {
     await next()
@@ -259,6 +267,11 @@ export function createSandboxDaemonApp(
       corsAllowedOrigins = new Set(body.cors.allowedOrigins)
     }
 
+    const initialPrompt = body.agent?.initialPrompt?.trim()
+    if (initialPrompt) {
+      pendingInitialPrompt = initialPrompt
+    }
+
     checkpointer.setConfig(body.gitCheckpoint)
 
     const summaries = []
@@ -285,6 +298,18 @@ export function createSandboxDaemonApp(
       workspace: {
         repos: summaries,
       },
+    }
+    if (pendingInitialPrompt) {
+      const prompt = pendingInitialPrompt
+      pendingInitialPrompt = null
+      try {
+        await provider.sendPrompt({
+          message: prompt,
+          streamingBehavior: 'followUp',
+        })
+      } catch {
+        // ignore prompt failures; init should still succeed
+      }
     }
     return c.json(response)
   })

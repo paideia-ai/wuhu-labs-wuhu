@@ -167,6 +167,7 @@ async function postDaemonCredentials(
 async function initSandboxRepo(
   record: { podIp: string | null; daemonPort: number },
   repoFullName: string,
+  prompt: string,
 ): Promise<void> {
   if (!record.podIp) return
   try {
@@ -185,6 +186,9 @@ async function initSandboxRepo(
               },
             ],
           },
+          agent: {
+            initialPrompt: prompt,
+          },
         }),
       },
     )
@@ -193,32 +197,6 @@ async function initSandboxRepo(
     }
   } catch (error) {
     console.warn('sandbox init request failed', error)
-  }
-}
-
-async function sendSandboxPrompt(
-  record: { podIp: string | null; daemonPort: number },
-  prompt: string,
-): Promise<void> {
-  if (!record.podIp) return
-  if (!prompt) return
-  try {
-    const response = await fetch(
-      `http://${record.podIp}:${record.daemonPort}/prompt`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          message: prompt,
-          streamingBehavior: 'followUp',
-        }),
-      },
-    )
-    if (!response.ok) {
-      console.warn('sandbox prompt failed', await response.text())
-    }
-  } catch (error) {
-    console.warn('sandbox prompt request failed', error)
   }
 }
 
@@ -299,10 +277,7 @@ app.post('/sandboxes', async (c) => {
         return
       }
       await postDaemonCredentials(ready, config.github.token, config.llm)
-      await Promise.allSettled([
-        initSandboxRepo(ready, repo),
-        sendSandboxPrompt(ready, prompt),
-      ])
+      await initSandboxRepo(ready, repo, prompt)
     })()
     return c.json({ sandbox: serializeSandbox(record) }, 201)
   } catch (error) {

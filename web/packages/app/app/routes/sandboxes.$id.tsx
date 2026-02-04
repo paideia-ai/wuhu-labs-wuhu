@@ -1,6 +1,13 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { Form, Link, redirect, useFetcher, useLoaderData } from 'react-router'
+import {
+  Form,
+  Link,
+  redirect,
+  useFetcher,
+  useLoaderData,
+  useRevalidator,
+} from 'react-router'
 import type { Route } from './+types/sandboxes.$id.ts'
 function parseSseChunk(chunk: string): { id: string; data?: string } {
   const lines = chunk.split(/\r?\n/)
@@ -288,22 +295,15 @@ function reduceEnvelope(
     return { ...state, activities: [] }
   }
 
-  const next: UiState = { ...state, cursor, lastEventType: event.type }
+  const next: UiState = {
+    ...state,
+    cursor,
+    lastEventType: event.source === 'agent' ? event.type : state.lastEventType,
+  }
 
   const agentEvent = coerceAgentEvent(event)
   if (!agentEvent) {
-    const daemonMessage: UiMessage = {
-      id: `daemon-${cursor}`,
-      role: 'system',
-      title: 'Daemon event',
-      text: JSON.stringify(event),
-      status: 'complete',
-      timestamp: formatTimestamp(),
-    }
-    return {
-      ...next,
-      messages: [...next.messages, daemonMessage],
-    }
+    return next
   }
 
   const payload = agentEvent.payload
@@ -465,9 +465,15 @@ export async function action({ params, request }: Route.ActionArgs) {
 export default function SandboxDetail() {
   const { sandbox } = useLoaderData<typeof loader>()
   const fetcher = useFetcher()
+  const revalidator = useRevalidator()
+  const sandboxReady = sandbox.status === 'running' && Boolean(sandbox.podIp) &&
+    Boolean(sandbox.daemonPort)
   const [prompt, setPrompt] = useState('')
-  const [connectionStatus, setConnectionStatus] = useState('Disconnected')
+  const [connectionStatus, setConnectionStatus] = useState(
+    () => (sandboxReady ? 'Disconnected' : 'Waiting for sandbox...'),
+  )
   const [streaming, setStreaming] = useState(false)
+  const sandboxReadyRef = useRef(sandboxReady)
 
   const [state, dispatchEnvelope] = useReducer(
     (s: UiState, env: StreamEnvelope<SandboxDaemonEvent>) =>
@@ -479,6 +485,10 @@ export default function SandboxDetail() {
   const logRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
+    sandboxReadyRef.current = sandboxReady
+  }, [sandboxReady])
+
+  useEffect(() => {
     if (!logRef.current) return
     logRef.current.scrollTop = logRef.current.scrollHeight
   }, [state.messages])
@@ -487,10 +497,15 @@ export default function SandboxDetail() {
 
   const startStream = async () => {
     if (streaming) return
+    if (!sandboxReady) {
+      setConnectionStatus('Waiting for sandbox...')
+      return
+    }
     setConnectionStatus('Connecting...')
     setStreaming(true)
     const controller = new AbortController()
     streamAbortRef.current = controller
+    let hadError = false
 
     try {
       const res = await fetch(
@@ -541,14 +556,19 @@ export default function SandboxDetail() {
       const isAbort = err && typeof err === 'object' &&
         (err as { name?: string }).name === 'AbortError'
       if (!isAbort) {
+        hadError = true
         const message = err instanceof Error ? err.message : String(err)
         console.error('Stream error', message)
         setConnectionStatus('Stream error')
       }
     } finally {
       setStreaming(false)
-      setConnectionStatus('Disconnected')
       streamAbortRef.current = null
+      if (!hadError) {
+        setConnectionStatus(
+          sandboxReadyRef.current ? 'Disconnected' : 'Waiting for sandbox...',
+        )
+      }
     }
   }
 
@@ -559,11 +579,24 @@ export default function SandboxDetail() {
   }
 
   useEffect(() => {
-    void startStream()
+    if (sandboxReady) {
+      void startStream()
+    } else {
+      setConnectionStatus('Waiting for sandbox...')
+      stopStream()
+    }
     return () => {
       stopStream()
     }
-  }, [streamUrl])
+  }, [streamUrl, sandboxReady])
+
+  useEffect(() => {
+    if (sandboxReady) return
+    const interval = setInterval(() => {
+      revalidator.revalidate()
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [revalidator, sandboxReady])
 
   const handleSendPrompt = async () => {
     const text = prompt.trim()
@@ -637,7 +670,7 @@ export default function SandboxDetail() {
           <div className='status__meta'>Agent: {state.agentStatus}</div>
           <div className='status__meta'>Cursor: {state.cursor}</div>
           <div className='status__meta'>
-            Last event: {state.lastEventType || 'None'}
+            Last agent event: {state.lastEventType || 'None'}
           </div>
         </div>
       </header>
@@ -656,7 +689,11 @@ export default function SandboxDetail() {
         <div className='panel__block panel__actions'>
           <label>Connection controls</label>
           <div className='actions'>
-            <button type='button' onClick={startStream} disabled={streaming}>
+            <button
+              type='button'
+              onClick={startStream}
+              disabled={streaming || !sandboxReady}
+            >
               Connect
             </button>
             <button
@@ -689,7 +726,7 @@ export default function SandboxDetail() {
             <div>
               <h2>Agent Thread</h2>
               <p className='subtext small'>
-                Messages stream from the daemon. Use Shift+Enter for a new line.
+                Messages stream from the agent. Use Shift+Enter for a new line.
               </p>
             </div>
             <div className='controls'>
@@ -708,7 +745,13 @@ export default function SandboxDetail() {
           </div>
 
           <div className='chat__log' ref={logRef}>
-            {state.messages.length === 0
+            {!sandboxReady
+              ? (
+                <div className='chat__empty'>
+                  Waiting for the sandbox to start.
+                </div>
+              )
+              : state.messages.length === 0
               ? (
                 <div className='chat__empty'>
                   No messages yet. Send a prompt to begin.
@@ -781,13 +824,14 @@ export default function SandboxDetail() {
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={handlePromptKeyDown}
               placeholder='Describe the coding task you want the agent to do...'
+              disabled={!sandboxReady}
             />
             <div className='composer__actions'>
               <span className='composer__hint'>Shift+Enter for new line</span>
               <button
                 type='submit'
                 className='primary'
-                disabled={!prompt.trim()}
+                disabled={!prompt.trim() || !sandboxReady}
               >
                 Send
               </button>
