@@ -1,8 +1,12 @@
 {
   "workspace": [
     "./packages/react-router-deno",
-    "./packages/app"
+    "./packages/app",
+    "./packages/consumer"
   ],
+  "imports": {
+    "@wuhu/shared": "../core/packages/shared/mod.ts"
+  },
   "nodeModulesDir": "auto",
   "unstable": ["sloppy-imports"],
   "fmt": {
