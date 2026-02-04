@@ -1160,6 +1160,7 @@
     "members": {
       "packages/app": {
         "dependencies": [
+          "jsr:@std/assert@1",
           "npm:@react-router/dev@^7.13.0",
           "npm:@types/react@19",
           "npm:isbot@5",

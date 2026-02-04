@@ -11,6 +11,7 @@ const serverBuild: ServerBuild = await import(BUILD_PATH)
 const requestHandler = createRequestHandler(serverBuild, 'production')
 
 const clientDir = new URL('./build/client', import.meta.url).pathname
+const API_URL = Deno.env.get('API_URL')?.replace(/\/+$/, '')
 
 declare module 'react-router' {
   interface Future {
@@ -20,6 +21,34 @@ declare module 'react-router' {
 
 Deno.serve({ port: PORT }, async (request) => {
   const url = new URL(request.url)
+
+  if (url.pathname.startsWith('/api/sandboxes')) {
+    if (!API_URL) {
+      return new Response('API_URL environment variable is not configured', {
+        status: 500,
+      })
+    }
+
+    const proxiedPath = url.pathname.replace(/^\/api/, '')
+    const targetUrl = new URL(API_URL)
+    targetUrl.pathname = proxiedPath
+    targetUrl.search = url.search
+
+    const headers = new Headers(request.headers)
+    headers.delete('host')
+
+    const upstream = await fetch(targetUrl, {
+      method: request.method,
+      headers,
+      body: request.body,
+      redirect: 'manual',
+    })
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: upstream.headers,
+    })
+  }
 
   // Serve static assets from /assets
   if (url.pathname.startsWith('/assets/')) {
