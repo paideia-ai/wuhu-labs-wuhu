@@ -38,9 +38,48 @@ Service that sits between main app and sandboxes:
 
 ### Sandbox + Daemon
 
-- Sandbox: ephemeral container/VM
-- Daemon: agent runtime inside, configured with endpoints from Controller
-- Daemon doesn't know or care about deployment mode
+**Pivot: Self-hosted k3s** (Modal/3rd-party sandbox work on hold)
+
+Reason: Jobs need direct access to internal services (MCP servers). Running in
+our own k3s cluster avoids exposing internal services externally.
+
+**Sandbox = K8s Job**
+
+- Runs forever until manually killed via web UI (MVP)
+- No auto-termination for now
+
+**Job lifecycle:**
+
+1. Job starts with setup script as entrypoint
+2. Setup script downloads bundled daemon from internal cluster service
+3. Setup script installs Pi agent
+4. Setup script starts daemon in background
+5. Setup script loops checking for sentinel file (`/tmp/shutdown`)
+6. On shutdown: daemon receives kill signal → writes sentinel file → exits
+7. Loop sees file → script exits → Job completes
+
+```bash
+#!/bin/sh
+# download daemon from internal service
+curl -o daemon http://internal-service/daemon
+# install pi agent
+...
+
+# start daemon in background
+./daemon &
+
+# wait for exit signal
+while [ ! -f /tmp/shutdown ]; do
+  sleep 1
+done
+```
+
+**Daemon:**
+
+- Agent runtime inside the Job
+- Configured with endpoints from Controller
+- Doesn't know or care about deployment mode
+- Has HTTP API for control (including shutdown)
 
 ### GitHub Abstraction
 
