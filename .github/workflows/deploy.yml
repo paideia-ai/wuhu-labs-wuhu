@@ -25,6 +25,7 @@ jobs:
         run: |
           sudo kubectl apply -f deploy/core.yaml
           sudo kubectl set image deployment/core core=docker.io/library/wuhu-core:${{ env.IMAGE_TAG }}
+          sudo kubectl set env deployment/core SANDBOX_IMAGE=docker.io/library/wuhu-core:${{ env.IMAGE_TAG }}
 
   deploy-web:
     runs-on: [self-hosted, wuhu]

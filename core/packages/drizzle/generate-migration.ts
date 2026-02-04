@@ -37,7 +37,7 @@ async function loadJournal(): Promise<Journal> {
 async function loadLatestSnapshot(): Promise<Record<string, unknown>> {
   const journal = await loadJournal()
   if (journal.entries.length === 0) {
-    return {}
+    return generateDrizzleJson({})
   }
   const lastIdx = journal.entries[journal.entries.length - 1].idx
   const text = await Deno.readTextFile(

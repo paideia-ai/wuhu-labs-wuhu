@@ -21,3 +21,4 @@ export function createDatabase(options?: CreateDatabaseOptions): Database {
 
 export { schema }
 export * from './schema.ts'
+export * from './utils.ts'

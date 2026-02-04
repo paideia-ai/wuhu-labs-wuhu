@@ -157,6 +157,7 @@ export interface SandboxDaemonServerOptions {
   ) => void | Promise<void>
   auth?: JwtAuthOptions
   workspaceRoot?: string
+  onShutdown?: () => void | Promise<void>
 }
 
 export interface SandboxDaemonApp {
@@ -167,7 +168,7 @@ export interface SandboxDaemonApp {
 export function createSandboxDaemonApp(
   options: SandboxDaemonServerOptions,
 ): SandboxDaemonApp {
-  const { provider, onCredentials, auth } = options
+  const { provider, onCredentials, auth, onShutdown } = options
   const app = new Hono()
   const eventStore = new InMemoryEventStore()
   const workspace: WorkspaceState = {
@@ -326,6 +327,17 @@ export function createSandboxDaemonApp(
       command: 'abort',
     }
     return c.json(response)
+  })
+
+  app.post('/shutdown', requireAdmin, async (c: Context) => {
+    if (onShutdown) {
+      try {
+        await onShutdown()
+      } catch {
+        return c.json({ ok: false, error: 'shutdown_failed' }, 500)
+      }
+    }
+    return c.json({ ok: true })
   })
 
   app.get('/stream', requireUser, (c: Context) => {

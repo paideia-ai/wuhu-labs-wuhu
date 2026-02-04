@@ -1,38 +1,27 @@
-import { boolean, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
-import { relations } from 'drizzle-orm'
+import { integer, pgEnum, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
 import { createId } from './utils.ts'
 
-export const users = pgTable('users', {
+export const sandboxStatus = pgEnum('sandbox_status', [
+  'pending',
+  'running',
+  'terminating',
+  'terminated',
+  'failed',
+])
+
+export const sandboxes = pgTable('sandboxes', {
   id: text('id').primaryKey().$defaultFn(createId),
-  email: text('email').notNull().unique(),
   name: text('name'),
+  status: sandboxStatus('status').notNull().default('pending'),
+  jobName: text('job_name').notNull().unique(),
+  namespace: text('namespace').notNull(),
+  podName: text('pod_name'),
+  podIp: text('pod_ip'),
+  daemonPort: integer('daemon_port').notNull().default(8787),
+  previewPort: integer('preview_port').notNull().default(8066),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() =>
     new Date()
   ),
+  terminatedAt: timestamp('terminated_at'),
 })
-
-export const posts = pgTable('posts', {
-  id: text('id').primaryKey().$defaultFn(createId),
-  title: text('title').notNull(),
-  content: text('content'),
-  published: boolean('published').notNull().default(false),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() =>
-    new Date()
-  ),
-  authorId: text('author_id').notNull().references(() => users.id, {
-    onDelete: 'cascade',
-  }),
-})
-
-export const usersRelations = relations(users, ({ many }) => ({
-  posts: many(posts),
-}))
-
-export const postsRelations = relations(posts, ({ one }) => ({
-  author: one(users, {
-    fields: [posts.authorId],
-    references: [users.id],
-  }),
-}))

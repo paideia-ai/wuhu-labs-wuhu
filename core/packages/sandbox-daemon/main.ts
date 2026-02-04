@@ -95,6 +95,35 @@ const provider = agentMode === 'mock'
     },
   })
 
+const previewPort = 8066
+const servers: { main?: Deno.HttpServer; preview?: Deno.HttpServer } = {}
+let shuttingDown = false
+
+const shutdown = async () => {
+  if (shuttingDown) return
+  shuttingDown = true
+  try {
+    await provider.stop()
+  } catch {
+    // ignore
+  }
+  try {
+    await Deno.writeTextFile('/tmp/shutdown', new Date().toISOString())
+  } catch {
+    // ignore
+  }
+  try {
+    servers.preview?.shutdown()
+  } catch {
+    // ignore
+  }
+  try {
+    servers.main?.shutdown()
+  } catch {
+    // ignore
+  }
+}
+
 const { app } = createSandboxDaemonApp({
   provider,
   onCredentials: async (payload) => {
@@ -105,6 +134,7 @@ const { app } = createSandboxDaemonApp({
     ? { secret: config.jwt.secret, issuer: config.jwt.issuer, enabled: true }
     : { enabled: false },
   workspaceRoot: config.workspaceRoot,
+  onShutdown: shutdown,
 })
 
 try {
@@ -115,15 +145,17 @@ try {
   )
 }
 
-const server = Deno.serve({ hostname, port }, app.fetch)
+servers.preview = Deno.serve({
+  hostname: '0.0.0.0',
+  port: previewPort,
+}, () => {
+  return new Response(
+    `<html><body style="font-family:system-ui;padding:2rem"><h1>Wuhu Sandbox Preview</h1><p>Sandbox daemon is running.</p></body></html>`,
+    { headers: { 'content-type': 'text/html; charset=utf-8' } },
+  )
+})
 
-const shutdown = async () => {
-  try {
-    await provider.stop()
-  } finally {
-    server.shutdown()
-  }
-}
+servers.main = Deno.serve({ hostname, port }, app.fetch)
 
 try {
   Deno.addSignalListener('SIGINT', () => void shutdown())
@@ -135,10 +167,13 @@ try {
 console.log(
   `sandbox-daemon listening on http://${hostname}:${port} (agent=${agentMode})`,
 )
+console.log(`preview server listening on http://0.0.0.0:${previewPort}`)
 console.log(
   `credentials loaded from env: OPENAI_API_KEY=${
     Boolean(envOpenAiKey)
   } ANTHROPIC_API_KEY=${Boolean(envAnthropicKey)}`,
 )
 
-await server.finished
+if (servers.main) {
+  await servers.main.finished
+}

@@ -164,3 +164,20 @@ Deno.test('POST /init echoes repo summaries', async () => {
   assertEquals(json.workspace.repos[0].path, 'repo-a')
   assertEquals(json.workspace.repos[0].currentBranch, 'main')
 })
+
+Deno.test('POST /shutdown triggers shutdown hook', async () => {
+  const provider = new FakeAgentProvider()
+  let called = false
+  const { app } = createSandboxDaemonApp({
+    provider,
+    onShutdown: () => {
+      called = true
+    },
+  })
+
+  const res = await app.request('/shutdown', { method: 'POST' })
+
+  assertEquals(res.status, 200)
+  assertEquals(await res.json(), { ok: true })
+  assertEquals(called, true)
+})
