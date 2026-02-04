@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM denoland/deno:latest AS build
+FROM denoland/deno:2.6.8 AS build
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ COPY packages ./packages
 RUN deno install
 RUN cd packages/app && deno task build
 
-FROM denoland/deno:latest AS production
+FROM denoland/deno:2.6.8 AS production
 
 WORKDIR /app
 

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage 1: Build with Deno
-FROM denoland/deno:2.3.3 AS build
+FROM denoland/deno:2.6.8 AS build
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ RUN deno install
 RUN deno check packages/server/main.ts
 
 # Stage 2: Production
-FROM denoland/deno:2.3.3 AS production
+FROM denoland/deno:2.6.8 AS production
 
 WORKDIR /app
 
