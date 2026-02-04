@@ -1,4 +1,9 @@
 import { Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router'
+import styles from './styles/sandbox-daemon.css?url'
+
+export function links() {
+  return [{ rel: 'stylesheet', href: styles }]
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (

@@ -55,6 +55,11 @@ export class LazyAgentProvider implements AgentProvider {
     await this.#provider.abort(request)
   }
 
+  async getState() {
+    if (!this.#provider || !this.#provider.getState) return null
+    return await this.#provider.getState()
+  }
+
   onEvent(handler: (event: SandboxDaemonAgentEvent) => void): () => void {
     this.#eventHandlers.add(handler)
     return () => {

@@ -133,8 +133,11 @@ async function waitForSandboxReady(
 async function postDaemonCredentials(
   record: { podIp: string | null; daemonPort: number },
   token: string | undefined,
+  llm: { openaiApiKey?: string; anthropicApiKey?: string },
 ): Promise<void> {
-  if (!record.podIp || !token) return
+  if (!record.podIp) return
+  const hasLlm = Boolean(llm.openaiApiKey || llm.anthropicApiKey)
+  if (!token && !hasLlm) return
   try {
     const response = await fetch(
       `http://${record.podIp}:${record.daemonPort}/credentials`,
@@ -143,7 +146,13 @@ async function postDaemonCredentials(
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           version: 'core',
-          github: { token },
+          github: token ? { token } : undefined,
+          llm: hasLlm
+            ? {
+              openaiApiKey: llm.openaiApiKey,
+              anthropicApiKey: llm.anthropicApiKey,
+            }
+            : undefined,
         }),
       },
     )
@@ -184,6 +193,32 @@ async function initSandboxRepo(
     }
   } catch (error) {
     console.warn('sandbox init request failed', error)
+  }
+}
+
+async function sendSandboxPrompt(
+  record: { podIp: string | null; daemonPort: number },
+  prompt: string,
+): Promise<void> {
+  if (!record.podIp) return
+  if (!prompt) return
+  try {
+    const response = await fetch(
+      `http://${record.podIp}:${record.daemonPort}/prompt`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          message: prompt,
+          streamingBehavior: 'followUp',
+        }),
+      },
+    )
+    if (!response.ok) {
+      console.warn('sandbox prompt failed', await response.text())
+    }
+  } catch (error) {
+    console.warn('sandbox prompt request failed', error)
   }
 }
 
@@ -229,7 +264,7 @@ app.get('/sandboxes', async (c) => {
 })
 
 app.post('/sandboxes', async (c) => {
-  let body: { name?: string; repo?: string } = {}
+  let body: { name?: string; repo?: string; prompt?: string } = {}
   try {
     body = await c.req.json()
   } catch {
@@ -250,6 +285,8 @@ app.post('/sandboxes', async (c) => {
     ) {
       return c.json({ error: 'repo_not_allowed' }, 400)
     }
+    const prompt = String(body.prompt ?? '').trim() ||
+      'Tell me what this repo is about'
     const kubeClient = await kubeClientPromise
     const { record } = await createSandbox(kubeClient, config.sandbox, {
       name: body.name ?? null,
@@ -261,8 +298,11 @@ app.post('/sandboxes', async (c) => {
         console.warn('sandbox pod did not become ready in time', record.id)
         return
       }
-      await postDaemonCredentials(ready, config.github.token)
-      await initSandboxRepo(ready, repo)
+      await postDaemonCredentials(ready, config.github.token, config.llm)
+      await Promise.allSettled([
+        initSandboxRepo(ready, repo),
+        sendSandboxPrompt(ready, prompt),
+      ])
     })()
     return c.json({ sandbox: serializeSandbox(record) }, 201)
   } catch (error) {

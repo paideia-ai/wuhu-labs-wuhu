@@ -20,6 +20,12 @@
 - Now includes initial prompt (repo already added in Stage 2)
 - Prompt is sent to Pi agent on sandbox start
 
+## LLM Credentials
+
+- Core passes LLM API keys to sandbox daemon via `POST /credentials`
+  - `llm.openaiApiKey` (from core env)
+  - `llm.anthropicApiKey` (from core env)
+
 ## Agent Chat UI
 
 - Embedded in task detail page
