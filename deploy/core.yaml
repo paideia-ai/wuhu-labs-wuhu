@@ -38,6 +38,13 @@ spec:
                   key: password
             - name: DATABASE_URL
               value: "postgresql://$(DB_USER):$(DB_PASSWORD)@postgres:5432/wuhu"
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-pat
+                  key: token
+            - name: GITHUB_ALLOWED_ORGS
+              value: "paideia-ai,wuhu-labs"
           livenessProbe:
             httpGet:
               path: /health

@@ -2,14 +2,18 @@
 
 ## Setup
 
-- GitHub PAT stored as K8s secret in cluster
-- Note: The coding agent (Claude/Codex) should ask human for a PAT during setup
+- GitHub PAT stored as K8s secret (`github-pat`)
+- Scopes: `repo` + `workflow`
+- `GITHUB_ALLOWED_ORGS` env var filters which orgs' repos are returned (comma-separated)
+  - e.g., `GITHUB_ALLOWED_ORGS=paideia-ai,wuhu-labs`
+  - Only repos from these orgs appear in the listing
+  - Personal repos excluded for now (MVP simplicity)
 
 ## Repo Listing API
 
 - Simple list repos endpoint
+- Filters to `GITHUB_ALLOWED_ORGS` only
 - Cache with 5min TTL (Redis in cluster)
-- Use latest node-redis with strong types
 
 ## Web UI - Create Task
 
