@@ -29,29 +29,26 @@ our own k3s cluster avoids exposing internal services externally.
 
 ### Job Lifecycle
 
-1. Job starts with setup script as entrypoint
-2. Setup script downloads bundled daemon from internal cluster service
-3. Setup script installs Pi agent
-4. Setup script starts daemon in background
-5. Setup script loops checking for sentinel file (`/tmp/shutdown`)
-6. On shutdown: daemon receives kill signal → writes sentinel file → exits
-7. Loop sees file → script exits → Job completes
+Sandbox jobs use a dedicated `wuhu-sandbox` image that includes:
+- Deno runtime
+- Sandbox daemon code (bundled at build time)
+- Pi agent + Node.js
+- Git, curl, and other tools
 
-```bash
-#!/bin/sh
-# download daemon from internal service
-curl -o daemon http://internal-service/daemon
-# install pi agent
-...
+Job startup:
+1. Container starts with `deno run -A packages/sandbox-daemon/main.ts`
+2. Daemon binds to port 8787 (control) and 8066 (preview)
+3. Daemon waits for `/credentials` and `/init` from Core
+4. On shutdown: daemon writes `/tmp/shutdown` sentinel and exits
 
-# start daemon in background
-./daemon &
-
-# wait for exit signal
-while [ ! -f /tmp/shutdown ]; do
-  sleep 1
-done
+```yaml
+# Simplified job spec
+command: ['deno']
+args: ['run', '-A', 'packages/sandbox-daemon/main.ts']
 ```
+
+Note: Original spec called for downloading daemon at runtime. We opted for a pre-built
+image instead — simpler for k3s where images are local, and ensures consistent daemon version.
 
 ### Daemon
 
@@ -70,8 +67,7 @@ done
 - In-band JS proxy in core server
 - Wildcard ingress routes `*.wuhu.liu.ms` → core
 - Core parses host, looks up pod IP, proxies request
-- MVP runs sandbox jobs on the same image as core
-- TODO: build a dedicated sandbox image (keep core image for server only)
+- Sandbox jobs use dedicated `wuhu-sandbox` image (see `core/Dockerfile.sandbox`)
 
 **Deferred: Traefik Plugin**
 
