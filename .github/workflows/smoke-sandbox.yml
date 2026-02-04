@@ -25,7 +25,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SMOKE_AGENT_MODE: ${{ secrets.OPENAI_API_KEY != '' && 'pi-rpc' || 'mock' }}
           SMOKE_REPO: ${{ github.repository }}
           SMOKE_BRANCH: ${{ github.ref_name }}
         run: deno run -A scripts/smoke-sandbox.ts
-
