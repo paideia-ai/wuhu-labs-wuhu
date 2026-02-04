@@ -2,6 +2,9 @@
  * A dummy shared package to test cross-workspace dependencies
  */
 
+// Import from another core workspace package
+import type { CreateDatabaseOptions } from '@wuhu/drizzle'
+
 export function greet(name: string): string {
   return `Hello, ${name}!`
 }
@@ -17,3 +20,6 @@ export const defaultConfig: SharedConfig = {
   debug: false,
   maxRetries: 3,
 }
+
+// Re-export type from drizzle to prove the import works
+export type { CreateDatabaseOptions }
