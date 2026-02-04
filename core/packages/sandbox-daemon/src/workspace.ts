@@ -35,6 +35,21 @@ function sourceToGitUrl(source: string): string {
   return source
 }
 
+function injectGithubToken(url: string): string {
+  const token = Deno.env.get('GITHUB_TOKEN')?.trim()
+  if (!token) return url
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname !== 'github.com') return url
+    if (parsed.username || parsed.password) return url
+    parsed.username = 'x-access-token'
+    parsed.password = token
+    return parsed.toString()
+  } catch {
+    return url
+  }
+}
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await Deno.stat(path)
@@ -90,7 +105,7 @@ export async function ensureRepo(
   const alreadyRepo = await isGitRepo(absPath)
   if (!alreadyRepo) {
     try {
-      const url = sourceToGitUrl(repo.source)
+      const url = injectGithubToken(sourceToGitUrl(repo.source))
       const args = ['clone']
       if (repo.branch) {
         args.push('--branch', repo.branch)

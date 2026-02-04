@@ -20,6 +20,8 @@ COPY --from=build /app/deno.json ./deno.json
 COPY --from=build /app/deno.lock ./deno.lock
 COPY --from=build /app/packages ./packages
 
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
 RUN deno install
 
 EXPOSE 3000

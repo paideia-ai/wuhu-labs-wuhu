@@ -4,6 +4,7 @@ import { cors } from '@hono/hono/cors'
 import { loadConfig } from './src/config.ts'
 import { createKubeClient } from './src/k8s.ts'
 import type { SandboxRecord } from './src/sandbox-service.ts'
+import { RepoService } from './src/repos.ts'
 import {
   createSandbox,
   getSandbox,
@@ -16,6 +17,11 @@ import {
 const app = new Hono()
 const config = loadConfig()
 const kubeClientPromise = createKubeClient(config.kube)
+const repoService = new RepoService({
+  token: config.github.token,
+  allowedOrgs: config.github.allowedOrgs,
+  redisUrl: config.redis.url,
+})
 
 app.use('*', cors())
 
@@ -108,6 +114,79 @@ async function tryShutdownDaemon(record: {
   }
 }
 
+async function waitForSandboxReady(
+  client: Awaited<ReturnType<typeof createKubeClient>>,
+  record: SandboxRecord,
+  options?: { attempts?: number; delayMs?: number },
+): Promise<SandboxRecord> {
+  const attempts = options?.attempts ?? 30
+  const delayMs = options?.delayMs ?? 1000
+  let current = record
+  for (let i = 0; i < attempts; i++) {
+    current = await refreshSandboxPod(client, current)
+    if (current.podIp) return current
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  return current
+}
+
+async function postDaemonCredentials(
+  record: { podIp: string | null; daemonPort: number },
+  token: string | undefined,
+): Promise<void> {
+  if (!record.podIp || !token) return
+  try {
+    const response = await fetch(
+      `http://${record.podIp}:${record.daemonPort}/credentials`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          version: 'core',
+          github: { token },
+        }),
+      },
+    )
+    if (!response.ok) {
+      console.warn('sandbox credentials failed', await response.text())
+    }
+  } catch (error) {
+    console.warn('sandbox credentials request failed', error)
+  }
+}
+
+async function initSandboxRepo(
+  record: { podIp: string | null; daemonPort: number },
+  repoFullName: string,
+): Promise<void> {
+  if (!record.podIp) return
+  try {
+    const response = await fetch(
+      `http://${record.podIp}:${record.daemonPort}/init`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workspace: {
+            repos: [
+              {
+                id: repoFullName,
+                source: `github:${repoFullName}`,
+                path: 'repo',
+              },
+            ],
+          },
+        }),
+      },
+    )
+    if (!response.ok) {
+      console.warn('sandbox init failed', await response.text())
+    }
+  } catch (error) {
+    console.warn('sandbox init request failed', error)
+  }
+}
+
 app.get('/', (c) => {
   return c.json({
     name: 'wuhu-core',
@@ -118,6 +197,17 @@ app.get('/', (c) => {
 
 app.get('/health', (c) => {
   return c.json({ status: 'ok' })
+})
+
+app.get('/repos', async (c) => {
+  try {
+    const repos = await repoService.listRepos()
+    return c.json({ repos })
+  } catch (error) {
+    console.error('Failed to list repos', error)
+    const message = error instanceof Error ? error.message : 'repo_list_failed'
+    return c.json({ error: message }, 500)
+  }
 })
 
 app.get('/sandboxes', async (c) => {
@@ -139,17 +229,41 @@ app.get('/sandboxes', async (c) => {
 })
 
 app.post('/sandboxes', async (c) => {
-  let body: { name?: string } = {}
+  let body: { name?: string; repo?: string } = {}
   try {
     body = await c.req.json()
   } catch {
     body = {}
   }
   try {
+    const repo = String(body.repo ?? '').trim()
+    if (!repo) {
+      return c.json({ error: 'missing_repo' }, 400)
+    }
+    const repoParts = repo.split('/')
+    if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) {
+      return c.json({ error: 'invalid_repo' }, 400)
+    }
+    if (
+      config.github.allowedOrgs.length > 0 &&
+      !config.github.allowedOrgs.includes(repoParts[0])
+    ) {
+      return c.json({ error: 'repo_not_allowed' }, 400)
+    }
     const kubeClient = await kubeClientPromise
     const { record } = await createSandbox(kubeClient, config.sandbox, {
       name: body.name ?? null,
+      repoFullName: repo,
     })
+    void (async () => {
+      const ready = await waitForSandboxReady(kubeClient, record)
+      if (!ready.podIp) {
+        console.warn('sandbox pod did not become ready in time', record.id)
+        return
+      }
+      await postDaemonCredentials(ready, config.github.token)
+      await initSandboxRepo(ready, repo)
+    })()
     return c.json({ sandbox: serializeSandbox(record) }, 201)
   } catch (error) {
     console.error('Failed to create sandbox', error)

@@ -4,8 +4,15 @@ import type { Route } from './+types/_index.ts'
 interface SandboxSummary {
   id: string
   name: string | null
+  repoFullName: string | null
   status: string
   previewUrl: string
+}
+
+interface RepoSummary {
+  id: number
+  fullName: string
+  private: boolean
 }
 
 export async function loader() {
@@ -16,13 +23,31 @@ export async function loader() {
     })
   }
 
+  let repos: RepoSummary[] = []
+  let repoError: string | null = null
+  try {
+    const response = await fetch(`${apiUrl}/repos`)
+    if (!response.ok) {
+      throw new Error('repo_fetch_failed')
+    }
+    const data = await response.json()
+    repos = (data?.repos ?? []) as RepoSummary[]
+  } catch (_e) {
+    repoError = 'Failed to load repos'
+  }
+
   try {
     const response = await fetch(`${apiUrl}/sandboxes`)
     const data = await response.json()
     const sandboxes = (data?.sandboxes ?? []) as SandboxSummary[]
-    return { sandboxes, error: null }
+    return { sandboxes, repos, error: null, repoError }
   } catch (_e) {
-    return { sandboxes: [], error: 'Failed to connect to API' }
+    return {
+      sandboxes: [],
+      repos,
+      error: 'Failed to connect to API',
+      repoError,
+    }
   }
 }
 
@@ -39,10 +64,14 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (actionType === 'create') {
     const name = String(formData.get('name') ?? '').trim()
+    const repo = String(formData.get('repo') ?? '').trim()
+    if (!repo) {
+      throw new Response('Repo is required', { status: 400 })
+    }
     const response = await fetch(`${apiUrl}/sandboxes`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: name || null }),
+      body: JSON.stringify({ name: name || null, repo }),
     })
     const payload = await response.json()
     if (!response.ok) {
@@ -74,7 +103,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function Index() {
-  const { sandboxes, error } = useLoaderData<typeof loader>()
+  const { sandboxes, repos, error, repoError } = useLoaderData<typeof loader>()
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
@@ -82,15 +111,37 @@ export default function Index() {
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
       <section style={{ marginBottom: '2rem' }}>
-        <h2>Create Sandbox</h2>
-        <Form method='post' style={{ display: 'flex', gap: '0.5rem' }}>
+        <h2>Create Task</h2>
+        {repoError && <p style={{ color: 'red' }}>{repoError}</p>}
+        <Form
+          method='post'
+          style={{
+            display: 'grid',
+            gap: '0.5rem',
+            gridTemplateColumns: '2fr 1fr auto',
+          }}
+        >
           <input
             type='text'
             name='name'
             placeholder='Sandbox name (optional)'
             style={{ flex: 1, padding: '0.5rem' }}
           />
-          <button type='submit' name='_action' value='create'>
+          <select name='repo' style={{ padding: '0.5rem' }}>
+            <option value=''>Select repo</option>
+            {repos.map((repo) => (
+              <option key={repo.id} value={repo.fullName}>
+                {repo.fullName}
+                {repo.private ? ' (private)' : ''}
+              </option>
+            ))}
+          </select>
+          <button
+            type='submit'
+            name='_action'
+            value='create'
+            disabled={repos.length === 0}
+          >
             Create
           </button>
         </Form>
@@ -120,6 +171,9 @@ export default function Index() {
                       </h3>
                       <p style={{ margin: '0.25rem 0' }}>
                         Status: <strong>{sandbox.status}</strong>
+                      </p>
+                      <p style={{ margin: '0.25rem 0' }}>
+                        Repo: <strong>{sandbox.repoFullName ?? 'None'}</strong>
                       </p>
                       <p style={{ margin: '0.25rem 0' }}>
                         Preview:{' '}

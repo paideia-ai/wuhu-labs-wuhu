@@ -12,6 +12,7 @@ export const sandboxStatus = pgEnum('sandbox_status', [
 export const sandboxes = pgTable('sandboxes', {
   id: text('id').primaryKey().$defaultFn(createId),
   name: text('name'),
+  repoFullName: text('repo_full_name'),
   status: sandboxStatus('status').notNull().default('pending'),
   jobName: text('job_name').notNull().unique(),
   namespace: text('namespace').notNull(),

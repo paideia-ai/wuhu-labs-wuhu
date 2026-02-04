@@ -46,6 +46,9 @@ export default function SandboxDetail() {
         Status: <strong>{sandbox.status}</strong>
       </p>
       <p>
+        Repo: <strong>{sandbox.repoFullName ?? 'None'}</strong>
+      </p>
+      <p>
         Preview:{' '}
         <a href={sandbox.previewUrl} target='_blank' rel='noreferrer'>
           {sandbox.previewUrl}

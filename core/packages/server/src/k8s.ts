@@ -261,6 +261,10 @@ export async function createSandboxJob(
               imagePullPolicy: 'IfNotPresent',
               command: ['deno'],
               args: ['run', '-A', 'packages/sandbox-daemon/main.ts'],
+              securityContext: {
+                runAsUser: 0,
+                runAsGroup: 0,
+              },
               env: [
                 { name: 'SANDBOX_DAEMON_HOST', value: '0.0.0.0' },
                 {
@@ -269,6 +273,8 @@ export async function createSandboxJob(
                 },
                 { name: 'SANDBOX_DAEMON_AGENT_MODE', value: 'mock' },
                 { name: 'SANDBOX_DAEMON_JWT_ENABLED', value: 'false' },
+                { name: 'SANDBOX_DAEMON_WORKSPACE_ROOT', value: '/root' },
+                { name: 'SANDBOX_DAEMON_PREVIEW_ROOT', value: '/root/repo' },
               ],
               ports: [
                 { name: 'daemon', containerPort: config.daemonPort },

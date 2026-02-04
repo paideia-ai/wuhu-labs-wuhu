@@ -23,7 +23,7 @@ function mapPodPhase(phase?: string): SandboxRecord['status'] | null {
 export async function createSandbox(
   client: KubeClient,
   sandboxConfig: SandboxConfig,
-  input: { name?: string | null },
+  input: { name?: string | null; repoFullName?: string | null },
 ): Promise<SandboxCreateResult> {
   const id = createId()
   const jobName = `sandbox-${id}`
@@ -32,6 +32,7 @@ export async function createSandbox(
   const [record] = await db.insert(sandboxes).values({
     id,
     name: input.name ?? null,
+    repoFullName: input.repoFullName ?? null,
     status: 'pending',
     jobName,
     namespace,
