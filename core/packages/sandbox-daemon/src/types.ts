@@ -62,6 +62,20 @@ export interface SandboxDaemonAgentConfig {
 }
 
 export interface SandboxDaemonInitRequest {
+  /**
+   * Optional sandbox identifier, provided by Core. When set (along with
+   * `coreApiUrl`), the daemon can persist UI state to Core.
+   */
+  sandboxId?: string
+  /**
+   * Optional Core API base URL, provided by Core. Used for best-effort state
+   * persistence.
+   */
+  coreApiUrl?: string
+  /**
+   * Optional repo full name for display/logging.
+   */
+  repo?: string
   workspace: {
     repos: SandboxDaemonRepoConfig[]
   }
