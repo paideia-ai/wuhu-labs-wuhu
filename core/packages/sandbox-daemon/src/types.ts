@@ -65,6 +65,11 @@ export interface SandboxDaemonInitRequest {
   workspace: {
     repos: SandboxDaemonRepoConfig[]
   }
+  /**
+   * Optional prompt to queue during init. Daemon decides when to forward this
+   * to the agent (e.g. after the repo clone completes).
+   */
+  prompt?: SandboxDaemonPromptRequest
   cors?: {
     allowedOrigins: string[]
   }
@@ -115,6 +120,10 @@ export type SandboxDaemonEventSource = 'daemon' | 'agent'
 export interface SandboxDaemonBaseEvent {
   source: SandboxDaemonEventSource
   type: string
+  /**
+   * Unix timestamp in milliseconds.
+   */
+  timestamp: number
 }
 
 export interface SandboxDaemonRepoClonedEvent extends SandboxDaemonBaseEvent {
@@ -143,10 +152,45 @@ export interface SandboxDaemonCheckpointCommitEvent
   pushed: boolean
 }
 
+export interface SandboxDaemonSandboxReadyEvent extends SandboxDaemonBaseEvent {
+  source: 'daemon'
+  type: 'sandbox_ready'
+}
+
+export interface SandboxDaemonInitCompleteEvent extends SandboxDaemonBaseEvent {
+  source: 'daemon'
+  type: 'init_complete'
+}
+
+export interface SandboxDaemonPromptQueuedEvent extends SandboxDaemonBaseEvent {
+  source: 'daemon'
+  type: 'prompt_queued'
+  message: string
+  streamingBehavior?: 'steer' | 'followUp'
+}
+
+export interface SandboxDaemonSandboxTerminatedEvent
+  extends SandboxDaemonBaseEvent {
+  source: 'daemon'
+  type: 'sandbox_terminated'
+}
+
+export interface SandboxDaemonDaemonErrorEvent extends SandboxDaemonBaseEvent {
+  source: 'daemon'
+  type: 'daemon_error'
+  error: string
+  detail?: unknown
+}
+
 export type SandboxDaemonDaemonEvent =
   | SandboxDaemonRepoClonedEvent
   | SandboxDaemonRepoCloneErrorEvent
   | SandboxDaemonCheckpointCommitEvent
+  | SandboxDaemonSandboxReadyEvent
+  | SandboxDaemonInitCompleteEvent
+  | SandboxDaemonPromptQueuedEvent
+  | SandboxDaemonSandboxTerminatedEvent
+  | SandboxDaemonDaemonErrorEvent
 
 export interface SandboxDaemonAgentEvent extends SandboxDaemonBaseEvent {
   source: 'agent'

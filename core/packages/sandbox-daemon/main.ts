@@ -9,7 +9,7 @@ import { LazyAgentProvider } from './src/lazy-agent-provider.ts'
 import { loadSandboxDaemonConfig } from './src/config.ts'
 import { readEnvTrimmed } from './src/env.ts'
 import { serveDir } from '@std/http/file-server'
-import { join } from '@std/path'
+import { dirname, join } from '@std/path'
 
 function fileExists(path: string): boolean {
   try {
@@ -66,6 +66,24 @@ const config = loadSandboxDaemonConfig()
 const hostname = config.host
 const port = config.port
 const agentMode = config.agentMode
+
+function defaultSessionPath(workspaceRoot?: string): string {
+  if (workspaceRoot === '/root' || workspaceRoot?.startsWith('/root/')) {
+    return '/root/.wuhu/pi-session.json'
+  }
+  const home = Deno.env.get('HOME')
+  if (home) return join(home, '.wuhu', 'pi-session.json')
+  return join(Deno.cwd(), '.wuhu', 'pi-session.json')
+}
+
+const sessionPath = config.pi.sessionPath ??
+  defaultSessionPath(config.workspaceRoot)
+try {
+  Deno.mkdirSync(dirname(sessionPath), { recursive: true })
+} catch {
+  // Best-effort; directory may already exist or not be writable in dev.
+}
+
 const previewRoot = Deno.env.get('SANDBOX_DAEMON_PREVIEW_ROOT') ??
   (config.workspaceRoot ? join(config.workspaceRoot, 'repo') : '/root/repo')
 
@@ -91,7 +109,12 @@ const provider = agentMode === 'mock'
     getRevision: () => credentials.get().revision,
     create: () => {
       const snapshot = credentials.get()
-      const { command, args } = resolvePiInvocation(config.pi)
+      const piArgs = config.pi.args ??
+        ['--mode', 'rpc', '--session', sessionPath]
+      const { command, args } = resolvePiInvocation({
+        command: config.pi.command,
+        args: piArgs,
+      })
       const cwd = config.pi.cwd
       return new PiAgentProvider({
         command,

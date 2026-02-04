@@ -17,6 +17,7 @@ export interface SandboxDaemonPiConfig {
   command?: string
   args?: string[]
   cwd?: string
+  sessionPath?: string
 }
 
 export interface SandboxDaemonConfig {
@@ -68,6 +69,7 @@ export function loadSandboxDaemonConfig(): SandboxDaemonConfig {
   const piCommand = readEnvTrimmed('SANDBOX_DAEMON_PI_COMMAND')
   const piArgs = parseArgsEnv(readEnvTrimmed('SANDBOX_DAEMON_PI_ARGS'))
   const piCwd = readEnvTrimmed('SANDBOX_DAEMON_PI_CWD')
+  const piSessionPath = readEnvTrimmed('SANDBOX_DAEMON_PI_SESSION_PATH')
 
   const workspaceRoot = readEnvTrimmed('SANDBOX_DAEMON_WORKSPACE_ROOT')
 
@@ -76,7 +78,12 @@ export function loadSandboxDaemonConfig(): SandboxDaemonConfig {
     port,
     agentMode,
     jwt: { enabled: jwtEnabled, secret: jwtSecret, issuer: jwtIssuer },
-    pi: { command: piCommand, args: piArgs, cwd: piCwd },
+    pi: {
+      command: piCommand,
+      args: piArgs,
+      cwd: piCwd,
+      sessionPath: piSessionPath,
+    },
     workspaceRoot,
   }
 }

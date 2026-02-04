@@ -123,6 +123,7 @@ export async function ensureRepo(
       const event: SandboxDaemonRepoClonedEvent = {
         source: 'daemon',
         type: 'repo_cloned',
+        timestamp: Date.now(),
         repoId: repo.id,
         path: repo.path,
       }
@@ -131,6 +132,7 @@ export async function ensureRepo(
       const event: SandboxDaemonRepoCloneErrorEvent = {
         source: 'daemon',
         type: 'repo_clone_error',
+        timestamp: Date.now(),
         repoId: repo.id,
         error: err instanceof Error ? err.message : String(err),
       }

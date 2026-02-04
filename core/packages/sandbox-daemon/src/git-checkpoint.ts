@@ -60,6 +60,7 @@ export class GitCheckpointer {
         const event: SandboxDaemonCheckpointCommitEvent = {
           source: 'daemon',
           type: 'checkpoint_commit',
+          timestamp: Date.now(),
           repoId,
           branch: cfg.branchName ?? 'mock',
           commitSha: '0'.repeat(40),
@@ -115,6 +116,7 @@ export class GitCheckpointer {
       const event: SandboxDaemonCheckpointCommitEvent = {
         source: 'daemon',
         type: 'checkpoint_commit',
+        timestamp: Date.now(),
         repoId,
         branch,
         commitSha,

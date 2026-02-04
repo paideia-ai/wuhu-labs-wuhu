@@ -33,12 +33,18 @@ export class MockAgentProvider implements AgentProvider {
       {
         source: 'agent',
         type: 'message_end',
+        timestamp: Date.now(),
         payload: {
           type: 'message_end',
           message: { role: 'assistant', content: text },
         },
       },
-      { source: 'agent', type: 'turn_end', payload: { type: 'turn_end' } },
+      {
+        source: 'agent',
+        type: 'turn_end',
+        timestamp: Date.now(),
+        payload: { type: 'turn_end' },
+      },
     ]
 
     // Emit on a microtask so callers can subscribe to the event stream first.
@@ -53,6 +59,7 @@ export class MockAgentProvider implements AgentProvider {
     const event: SandboxDaemonAgentEvent = {
       source: 'agent',
       type: 'abort',
+      timestamp: Date.now(),
       payload: { type: 'abort' },
     }
     for (const handler of this.handlers) handler(event)

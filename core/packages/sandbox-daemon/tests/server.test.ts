@@ -50,6 +50,7 @@ Deno.test('GET /stream returns SSE with agent events from cursor', async () => {
   const event: SandboxDaemonAgentEvent = {
     source: 'agent',
     type: 'message_update',
+    timestamp: 123,
     payload: {
       type: 'message_update',
       text: 'partial',
@@ -173,6 +174,76 @@ Deno.test('POST /init echoes repo summaries', async () => {
   assertEquals(json.workspace.repos[0].id, 'repo-a')
   assertEquals(json.workspace.repos[0].path, 'repo-a')
   assertEquals(json.workspace.repos[0].currentBranch, 'main')
+})
+
+Deno.test('POST /init queues prompt and emits lifecycle events', async () => {
+  const provider = new FakeAgentProvider()
+  const tmp = await Deno.makeTempDir()
+
+  const runGit = async (cwd: string, args: string[]) => {
+    const cmd = new Deno.Command('git', {
+      args,
+      cwd,
+      stdin: 'null',
+      stdout: 'piped',
+      stderr: 'piped',
+    })
+    const out = await cmd.output()
+    if (!out.success) {
+      throw new Error(new TextDecoder().decode(out.stderr))
+    }
+    return new TextDecoder().decode(out.stdout)
+  }
+
+  const sourceRepo = `${tmp}/source`
+  const workspaceRoot = `${tmp}/ws`
+  await Deno.mkdir(sourceRepo, { recursive: true })
+  await runGit(sourceRepo, ['init', '-b', 'main'])
+  await runGit(sourceRepo, ['config', 'user.email', 'test@example.com'])
+  await runGit(sourceRepo, ['config', 'user.name', 'Test'])
+  await Deno.writeTextFile(`${sourceRepo}/README.md`, 'hello')
+  await runGit(sourceRepo, ['add', '.'])
+  await runGit(sourceRepo, ['commit', '-m', 'init'])
+
+  const { app } = createSandboxDaemonApp({ provider, workspaceRoot })
+
+  const payload: SandboxDaemonInitRequest = {
+    workspace: {
+      repos: [
+        { id: 'repo-a', source: sourceRepo, path: 'repo-a' },
+      ],
+    },
+    prompt: {
+      message: 'Tell me about this repo',
+      streamingBehavior: 'followUp',
+    },
+  }
+
+  const res = await app.request('/init', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  assertEquals(res.status, 200)
+  const json = await res.json()
+  assertEquals(json.ok, true)
+  assertEquals(provider.prompts.length, 1)
+  assertEquals(provider.prompts[0].message, 'Tell me about this repo')
+  assertEquals(provider.prompts[0].streamingBehavior, 'followUp')
+
+  const streamRes = await app.request('/stream?cursor=0', { method: 'GET' })
+  const text = await streamRes.text()
+  const dataLines = text.split('\n').filter((line) => line.startsWith('data: '))
+  const events = dataLines.map((line) =>
+    JSON.parse(line.slice('data: '.length)) as SandboxDaemonStreamEnvelope<
+      { type?: string; [key: string]: unknown }
+    >
+  )
+  const types = events.map((env) => String(env.event?.type ?? ''))
+  assertEquals(types.includes('prompt_queued'), true)
+  assertEquals(types.includes('repo_cloned'), true)
+  assertEquals(types.includes('init_complete'), true)
 })
 
 Deno.test('POST /shutdown triggers shutdown hook', async () => {
