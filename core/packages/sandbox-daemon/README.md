@@ -21,7 +21,9 @@ deno run -A packages/sandbox-daemon/main.ts
 
 - `SANDBOX_DAEMON_PI_COMMAND` (default: `pi` if found on `PATH`)
 - `SANDBOX_DAEMON_PI_ARGS` (optional; JSON array or whitespace-separated string)
-- `SANDBOX_DAEMON_PI_CWD` (optional)
+
+Pi runs with its working directory set to the first repo cloned in the `/init`
+handshake.
 
 Example without a global `pi` install:
 
