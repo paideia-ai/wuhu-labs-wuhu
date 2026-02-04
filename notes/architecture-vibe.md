@@ -5,13 +5,7 @@
 Wuhu is not Terragon. Terragon was "agents do your coding tasks". Wuhu is a data
 layer + API for understanding coding agents.
 
-Core value:
-
-- Collect session logs from all agents (Claude Code, Codex, OpenCode, etc)
-- Provide APIs for querying - agents use these to understand code context
-- Git blame a line → find the session that wrote it → understand the why
-
-No fancy dashboards. Just storage, APIs, and tools that smart agents consume.
+See `mvp/` for the 5-stage MVP plan.
 
 ## Philosophy
 
@@ -35,12 +29,6 @@ Service that sits between main app and sandboxes:
 - Proxies LLM calls (sandbox never sees real tokens)
 - Could proxy preview URLs
 - Adapts to deployment mode (self-hosted runner vs hosted sandbox)
-
-### Sandbox + Daemon
-
-- Sandbox: ephemeral container/VM
-- Daemon: agent runtime inside, configured with endpoints from Controller
-- Daemon doesn't know or care about deployment mode
 
 ### GitHub Abstraction
 
