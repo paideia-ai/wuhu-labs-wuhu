@@ -1,0 +1,10 @@
+{
+  "name": "@wuhu/consumer",
+  "exports": {
+    ".": "./mod.ts"
+  },
+  "tasks": {
+    "check": "deno check . && deno lint",
+    "test": "deno eval \"console.log('no tests (consumer)')\""
+  }
+}

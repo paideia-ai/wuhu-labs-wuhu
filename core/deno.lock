@@ -1006,6 +1006,11 @@
           "npm:postgres@^3.4.5",
           "npm:redis@^4.7.0"
         ]
+      },
+      "packages/shared": {
+        "dependencies": [
+          "jsr:@wuhu/drizzle@*"
+        ]
       }
     }
   }

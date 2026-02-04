@@ -1,7 +1,11 @@
 {
   "workspace": [
     "./packages/react-router-deno",
-    "./packages/app"
+    "./packages/app",
+    "./packages/consumer"
+  ],
+  "links": [
+    "../core/packages/shared"
   ],
   "nodeModulesDir": "auto",
   "unstable": ["sloppy-imports"],

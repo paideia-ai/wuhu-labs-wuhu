@@ -3,7 +3,8 @@
     "./packages/sandbox-daemon",
     "./packages/sandbox-cli",
     "./packages/server",
-    "./packages/drizzle"
+    "./packages/drizzle",
+    "./packages/shared"
   ],
   "fmt": {
     "indentWidth": 2,
