@@ -22,6 +22,11 @@ export interface KubeConfigOptions {
 
 export interface AppConfig {
   port: number
+  /**
+   * Base URL that a sandbox daemon should use to call back into Core.
+   * In-cluster default is `http://core:${PORT}`.
+   */
+  coreApiUrl: string
   sandbox: SandboxConfig
   github: GithubConfig
   redis: RedisConfig
@@ -41,9 +46,12 @@ export function loadConfig(): AppConfig {
     .map((org) => org.trim())
     .filter(Boolean)
   const redisUrl = Deno.env.get('REDIS_URL') ?? 'redis://localhost:6379'
+  const coreApiUrl = (Deno.env.get('CORE_API_URL') ?? '').trim() ||
+    `http://core:${port}`
 
   return {
     port,
+    coreApiUrl,
     sandbox: {
       namespace,
       image,

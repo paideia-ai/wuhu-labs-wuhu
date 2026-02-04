@@ -214,7 +214,7 @@ async function postDaemonCredentials(
 }
 
 async function initSandboxRepo(
-  record: { podIp: string | null; daemonPort: number },
+  record: SandboxRecord,
   repoFullName: string,
   prompt: string,
 ): Promise<void> {
@@ -226,6 +226,9 @@ async function initSandboxRepo(
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          sandboxId: record.id,
+          repo: repoFullName,
+          coreApiUrl: config.coreApiUrl,
           workspace: {
             repos: [
               {

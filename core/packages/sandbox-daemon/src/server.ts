@@ -18,6 +18,7 @@ import type { AgentProvider } from './agent-provider.ts'
 import type {
   SandboxDaemonAbortRequest,
   SandboxDaemonAbortResponse,
+  SandboxDaemonAgentEvent,
   SandboxDaemonCredentialsPayload,
   SandboxDaemonEvent,
   SandboxDaemonInitRequest,
@@ -26,6 +27,13 @@ import type {
   SandboxDaemonPromptResponse,
   SandboxDaemonStreamEnvelope,
 } from './types.ts'
+import {
+  convertTurnToMessages,
+  defaultCursorPath,
+  FileCursorStore,
+  type PersistedUiMessage,
+  postJsonWithRetry,
+} from './state-persistence.ts'
 
 import type { Context } from '@hono/hono'
 import type { MiddlewareHandler } from '@hono/hono'
@@ -36,6 +44,10 @@ async function readJsonBody(c: Context): Promise<unknown | null> {
   } catch {
     return null
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 const zCredentialsPayload = z
@@ -165,6 +177,14 @@ export interface SandboxDaemonServerOptions {
   auth?: JwtAuthOptions
   workspaceRoot?: string
   onShutdown?: () => void | Promise<void>
+  statePersistence?: {
+    cursorPath?: string
+    attempts?: number
+    baseDelayMs?: number
+    fetchFn?: typeof fetch
+    sleep?: (ms: number) => Promise<void>
+    warn?: (...args: unknown[]) => void
+  }
 }
 
 export interface SandboxDaemonApp {
@@ -183,9 +203,19 @@ export function createSandboxDaemonApp(
     repos: new Map(),
   }
   const checkpointer = new GitCheckpointer()
+  const cursorStore = new FileCursorStore(
+    options.statePersistence?.cursorPath ?? defaultCursorPath(workspace.root),
+  )
+  const warn = options.statePersistence?.warn ?? console.warn
   let corsAllowedOrigins = new Set<string>()
   let turnCounter = 0
   let checkpointQueue = Promise.resolve()
+  let persistenceQueue = Promise.resolve()
+  let persistenceConfig: { sandboxId: string; coreApiUrl: string } | null = null
+  let pendingMessages: PersistedUiMessage[] = []
+
+  let inTurn = false
+  const currentTurnAgentEvents: SandboxDaemonAgentEvent[] = []
 
   const noAuth: MiddlewareHandler = async (_c, next) => {
     await next()
@@ -220,16 +250,73 @@ export function createSandboxDaemonApp(
   })
 
   provider.onEvent((event) => {
-    const type = event.type || event.payload?.type
+    const payload = (event as { payload?: unknown }).payload
+    const payloadType = isRecord(payload) && typeof payload.type === 'string'
+      ? payload.type
+      : undefined
+    const type = payloadType ?? event.type
+
+    if (type === 'turn_start') {
+      inTurn = true
+      currentTurnAgentEvents.length = 0
+      currentTurnAgentEvents.push(event)
+      return
+    }
+
+    if (inTurn) {
+      currentTurnAgentEvents.push(event)
+    }
+
     if (type !== 'turn_end') return
     turnCounter++
     const turn = turnCounter
+
+    const eventsSnapshot = inTurn ? [...currentTurnAgentEvents] : [event]
+    inTurn = false
+    currentTurnAgentEvents.length = 0
+
     checkpointQueue = checkpointQueue
       .then(() =>
         checkpointer.checkpoint(workspace, turn, (e) => eventStore.append(e))
       )
       .catch(() => {
         // Swallow checkpoint failures; they should not kill the daemon.
+      })
+
+    if (!persistenceConfig) return
+    const persistenceSnapshot = persistenceConfig
+    persistenceQueue = persistenceQueue
+      .then(async () => {
+        const startCursor = cursorStore.get()
+        const { messages, nextCursor } = convertTurnToMessages(
+          eventsSnapshot,
+          startCursor,
+          turn,
+        )
+        if (messages.length) {
+          pendingMessages.push(...messages)
+          cursorStore.set(nextCursor)
+          cursorStore.save()
+        }
+
+        if (!pendingMessages.length) return
+
+        const base = persistenceSnapshot.coreApiUrl.replace(/\/$/, '')
+        const url = `${base}/sandboxes/${persistenceSnapshot.sandboxId}/state`
+        await postJsonWithRetry(
+          url,
+          { cursor: cursorStore.get(), messages: pendingMessages },
+          {
+            attempts: options.statePersistence?.attempts,
+            baseDelayMs: options.statePersistence?.baseDelayMs,
+            fetchFn: options.statePersistence?.fetchFn,
+            sleep: options.statePersistence?.sleep,
+          },
+        )
+        pendingMessages = []
+      })
+      .catch((err) => {
+        warn('state persistence failed (best-effort)', err)
       })
   })
 
@@ -276,6 +363,18 @@ export function createSandboxDaemonApp(
       return c.json({ ok: false, error: 'invalid_init_payload' }, 400)
     }
     const body = parsed.data as SandboxDaemonInitRequest
+
+    const sandboxId = typeof body.sandboxId === 'string'
+      ? body.sandboxId.trim()
+      : ''
+    const coreApiUrl = typeof body.coreApiUrl === 'string'
+      ? body.coreApiUrl.trim()
+      : ''
+    if (sandboxId && coreApiUrl) {
+      persistenceConfig = { sandboxId, coreApiUrl }
+    } else {
+      persistenceConfig = null
+    }
 
     if (body.cors?.allowedOrigins) {
       corsAllowedOrigins = new Set(body.cors.allowedOrigins)

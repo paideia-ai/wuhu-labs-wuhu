@@ -24,6 +24,8 @@ spec:
           env:
             - name: PORT
               value: "3000"
+            - name: CORE_API_URL
+              value: "http://core:3000"
             - name: SANDBOX_IMAGE
               value: "wuhu-sandbox:latest"
             - name: DB_USER
