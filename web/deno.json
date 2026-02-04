@@ -4,9 +4,9 @@
     "./packages/app",
     "./packages/consumer"
   ],
-  "imports": {
-    "@wuhu/shared": "../core/packages/shared/mod.ts"
-  },
+  "links": [
+    "../core/packages/shared"
+  ],
   "nodeModulesDir": "auto",
   "unstable": ["sloppy-imports"],
   "fmt": {

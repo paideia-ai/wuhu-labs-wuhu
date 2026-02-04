@@ -1184,6 +1184,45 @@
           "npm:rolldown-vite@latest"
         ]
       }
+    },
+    "links": {
+      "jsr:@wuhu/drizzle": {
+        "dependencies": [
+          "npm:drizzle-kit@0.31",
+          "npm:drizzle-orm@0.44",
+          "npm:postgres@^3.4.5"
+        ]
+      },
+      "jsr:@wuhu/sandbox-cli": {
+        "dependencies": [
+          "jsr:@std/assert@1",
+          "jsr:@std/path@1"
+        ]
+      },
+      "jsr:@wuhu/sandbox-daemon": {
+        "dependencies": [
+          "jsr:@hono/hono@4",
+          "jsr:@std/assert@1",
+          "jsr:@std/http@1",
+          "jsr:@std/path@1",
+          "npm:zod@4.3.6"
+        ]
+      },
+      "jsr:@wuhu/server": {
+        "dependencies": [
+          "jsr:@hono/hono@4",
+          "jsr:@std/assert@1",
+          "jsr:@std/encoding@1",
+          "jsr:@std/path@1",
+          "jsr:@std/yaml@1",
+          "npm:@octokit/rest@22",
+          "npm:drizzle-orm@0.44",
+          "npm:minio@8",
+          "npm:postgres@^3.4.5",
+          "npm:redis@^4.7.0"
+        ]
+      },
+      "jsr:@wuhu/shared": {}
     }
   }
 }
