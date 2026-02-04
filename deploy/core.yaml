@@ -47,6 +47,16 @@ spec:
               value: "paideia-ai,wuhu-labs"
             - name: REDIS_URL
               value: "redis://redis:6379"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-keys
+                  key: openai-api-key
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-keys
+                  key: anthropic-api-key
           livenessProbe:
             httpGet:
               path: /health
