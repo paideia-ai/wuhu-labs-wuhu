@@ -128,6 +128,36 @@ Implementation:
 
 The action is idempotent. Cron catches missed events. No complex state machine.
 
+## Stage 1: Basic Sandbox Lifecycle (MVP)
+
+No agent execution yet - validate sandbox lifecycle and routing.
+
+**Domain:** `wuhu.liu.ms` (playground/prod)
+
+**1. Web UI - Create Task**
+- Select repo + enter initial prompt
+- Creates a K8s Job (sandbox)
+- Daemon starts but doesn't execute agent
+
+**2. Sandbox Daemon**
+- Starts a dummy static HTTP server on a random port
+- No Pi agent execution yet
+
+**3. Preview URL Routing (Traefik)**
+- Expose sandbox ports via wildcard subdomain
+- Pattern: `<sandbox-id>-<port>.wuhu.liu.ms`
+- Uses existing `*.wuhu.liu.ms` DNS/cert (no infra changes)
+- Traefik routes based on host prefix
+
+**4. Web UI - Sandbox List**
+- Show all active sandboxes
+- Kill button → daemon shutdown → Job terminates
+
+**Validates:**
+- Job creation/termination
+- Port exposure/routing
+- UI flow
+
 ## Infrastructure Assumptions
 
 - Data broker: Redis (or Redis-over-HTTP for serverless)
