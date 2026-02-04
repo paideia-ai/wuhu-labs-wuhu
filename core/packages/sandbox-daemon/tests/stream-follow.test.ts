@@ -53,6 +53,7 @@ Deno.test('SSE follow: resumes from non-zero cursor', async () => {
   provider.emit({
     source: 'agent',
     type: 'message_update',
+    timestamp: 1,
     payload: { type: 'message_update', text: 'first' },
   })
 
@@ -61,6 +62,7 @@ Deno.test('SSE follow: resumes from non-zero cursor', async () => {
   const second: SandboxDaemonAgentEvent = {
     source: 'agent',
     type: 'message_update',
+    timestamp: 2,
     payload: { type: 'message_update', text: 'second' },
   }
   provider.emit(second)
@@ -87,6 +89,7 @@ Deno.test('SSE follow: multiple subscribers receive same event', async () => {
   const event: SandboxDaemonAgentEvent = {
     source: 'agent',
     type: 'message_update',
+    timestamp: 3,
     payload: { type: 'message_update', text: 'hi' },
   }
   provider.emit(event)

@@ -1,6 +1,7 @@
 import { Hono } from '@hono/hono'
 import type { Context } from '@hono/hono'
 import { cors } from '@hono/hono/cors'
+import { streamSSE } from '@hono/hono/streaming'
 import { loadConfig } from './src/config.ts'
 import { createKubeClient } from './src/k8s.ts'
 import type { SandboxRecord } from './src/sandbox-service.ts'
@@ -24,6 +25,17 @@ const repoService = new RepoService({
 })
 
 app.use('*', cors())
+
+function readEnvTrimmed(name: string): string | undefined {
+  const raw = Deno.env.get(name)
+  if (!raw) return undefined
+  const trimmed = raw.trim()
+  return trimmed.length ? trimmed : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
 
 function parsePreviewHost(host: string): { id: string; port: number } | null {
   const hostname = host.split(':')[0]
@@ -130,11 +142,38 @@ async function waitForSandboxReady(
   return current
 }
 
+async function waitForDaemonHealthy(
+  record: { podIp: string | null; daemonPort: number },
+  options?: { attempts?: number; delayMs?: number; timeoutMs?: number },
+): Promise<boolean> {
+  if (!record.podIp) return false
+  const attempts = options?.attempts ?? 45
+  const delayMs = options?.delayMs ?? 1000
+  const timeoutMs = options?.timeoutMs ?? 1500
+  for (let i = 0; i < attempts; i++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const res = await fetch(
+        `http://${record.podIp}:${record.daemonPort}/health`,
+        { signal: controller.signal },
+      )
+      if (res.ok) return true
+    } catch {
+      // ignore
+    } finally {
+      clearTimeout(timer)
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  return false
+}
+
 async function postDaemonCredentials(
   record: { podIp: string | null; daemonPort: number },
   token: string | undefined,
 ): Promise<void> {
-  if (!record.podIp || !token) return
+  if (!record.podIp) return
   try {
     const response = await fetch(
       `http://${record.podIp}:${record.daemonPort}/credentials`,
@@ -143,7 +182,11 @@ async function postDaemonCredentials(
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           version: 'core',
-          github: { token },
+          llm: {
+            openaiApiKey: readEnvTrimmed('OPENAI_API_KEY') ?? null,
+            anthropicApiKey: readEnvTrimmed('ANTHROPIC_API_KEY') ?? null,
+          },
+          ...(token ? { github: { token } } : {}),
         }),
       },
     )
@@ -158,6 +201,7 @@ async function postDaemonCredentials(
 async function initSandboxRepo(
   record: { podIp: string | null; daemonPort: number },
   repoFullName: string,
+  prompt: string,
 ): Promise<void> {
   if (!record.podIp) return
   try {
@@ -176,6 +220,10 @@ async function initSandboxRepo(
               },
             ],
           },
+          prompt: {
+            message: prompt,
+            streamingBehavior: 'followUp',
+          },
         }),
       },
     )
@@ -185,6 +233,106 @@ async function initSandboxRepo(
   } catch (error) {
     console.warn('sandbox init request failed', error)
   }
+}
+
+type DaemonStreamEnvelope = {
+  cursor?: number
+  event?: unknown
+}
+
+function parseSseChunk(chunk: string): { data?: string; event?: string } {
+  const lines = chunk.split(/\r?\n/)
+  const dataLines: string[] = []
+  let event: string | undefined
+  for (const line of lines) {
+    if (!line || line.startsWith(':')) continue
+    if (line.startsWith('event:')) {
+      event = line.slice('event:'.length).trimStart()
+      continue
+    }
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice('data:'.length).trimStart())
+    }
+  }
+  const data = dataLines.length ? dataLines.join('\n') : undefined
+  return { data, event }
+}
+
+async function proxyDaemonSse(
+  c: Context,
+  record: SandboxRecord,
+  options: {
+    cursor: number
+    filter: (event: Record<string, unknown>) => boolean
+    map: (event: Record<string, unknown>) => Record<string, unknown>
+  },
+): Promise<Response> {
+  if (!record.podIp) {
+    return c.json({ error: 'pod_not_ready' }, 503)
+  }
+  const upstreamUrl =
+    `http://${record.podIp}:${record.daemonPort}/stream?cursor=${options.cursor}&follow=1`
+
+  const upstreamController = new AbortController()
+  const upstreamRes = await fetch(upstreamUrl, {
+    headers: { accept: 'text/event-stream' },
+    signal: upstreamController.signal,
+  })
+  if (!upstreamRes.ok || !upstreamRes.body) {
+    const text = await upstreamRes.text().catch(() => '')
+    return c.json(
+      { error: 'upstream_stream_failed', status: upstreamRes.status, text },
+      502,
+    )
+  }
+  const upstreamBody = upstreamRes.body
+
+  return streamSSE(c, async (stream) => {
+    stream.onAbort(() => upstreamController.abort())
+    const reader = upstreamBody.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    try {
+      while (!stream.aborted) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split(/\r?\n\r?\n/)
+        buffer = parts.pop() ?? ''
+        for (const part of parts) {
+          if (!part.trim()) continue
+          const parsed = parseSseChunk(part)
+          if (!parsed.data) continue
+          if (parsed.event === 'heartbeat') continue
+          let env: DaemonStreamEnvelope
+          try {
+            env = JSON.parse(parsed.data) as DaemonStreamEnvelope
+          } catch {
+            continue
+          }
+          const cursor = typeof env.cursor === 'number' ? env.cursor : null
+          if (!cursor) continue
+          const rawEvent = env.event
+          if (!isRecord(rawEvent)) continue
+          if (!options.filter(rawEvent)) continue
+          const mapped = options.map(rawEvent)
+          await stream.writeSSE({
+            id: String(cursor),
+            data: JSON.stringify({ cursor, event: mapped }),
+          })
+        }
+      }
+    } catch {
+      // Ignore stream errors; disconnect will end the request.
+    } finally {
+      try {
+        await reader.cancel()
+      } catch {
+        // ignore
+      }
+    }
+  })
 }
 
 app.get('/', (c) => {
@@ -229,7 +377,7 @@ app.get('/sandboxes', async (c) => {
 })
 
 app.post('/sandboxes', async (c) => {
-  let body: { name?: string; repo?: string } = {}
+  let body: { name?: string; repo?: string; prompt?: string } = {}
   try {
     body = await c.req.json()
   } catch {
@@ -240,6 +388,8 @@ app.post('/sandboxes', async (c) => {
     if (!repo) {
       return c.json({ error: 'missing_repo' }, 400)
     }
+    const prompt = String(body.prompt ?? '').trim() ||
+      'Tell me what this repo is about'
     const repoParts = repo.split('/')
     if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) {
       return c.json({ error: 'invalid_repo' }, 400)
@@ -255,16 +405,27 @@ app.post('/sandboxes', async (c) => {
       name: body.name ?? null,
       repoFullName: repo,
     })
-    void (async () => {
-      const ready = await waitForSandboxReady(kubeClient, record)
-      if (!ready.podIp) {
-        console.warn('sandbox pod did not become ready in time', record.id)
-        return
-      }
-      await postDaemonCredentials(ready, config.github.token)
-      await initSandboxRepo(ready, repo)
-    })()
-    return c.json({ sandbox: serializeSandbox(record) }, 201)
+
+    const ready = await waitForSandboxReady(kubeClient, record, {
+      attempts: 60,
+      delayMs: 1000,
+    })
+    if (!ready.podIp) {
+      return c.json({ error: 'pod_not_ready' }, 503)
+    }
+    const healthy = await waitForDaemonHealthy(ready, {
+      attempts: 60,
+      delayMs: 1000,
+      timeoutMs: 1500,
+    })
+    if (!healthy) {
+      return c.json({ error: 'daemon_not_ready' }, 503)
+    }
+
+    await postDaemonCredentials(ready, config.github.token)
+    void initSandboxRepo(ready, repo, prompt)
+
+    return c.json({ sandbox: serializeSandbox(ready) }, 201)
   } catch (error) {
     console.error('Failed to create sandbox', error)
     return c.json({ error: 'sandbox_create_failed' }, 500)
@@ -302,6 +463,161 @@ app.post('/sandboxes/:id/kill', async (c) => {
   } catch (error) {
     console.error('Failed to terminate sandbox', error)
     return c.json({ error: 'sandbox_kill_failed' }, 500)
+  }
+})
+
+app.post('/sandboxes/:id/prompt', async (c) => {
+  const id = c.req.param('id')
+  let body: { message?: string; streamingBehavior?: 'steer' | 'followUp' } = {}
+  try {
+    body = await c.req.json()
+  } catch {
+    body = {}
+  }
+  const message = String(body.message ?? '').trim()
+  if (!message) return c.json({ error: 'missing_message' }, 400)
+
+  try {
+    const kubeClient = await kubeClientPromise
+    const record = await getSandbox(id)
+    if (!record) return c.json({ error: 'not_found' }, 404)
+    const refreshed = await refreshSandboxPod(kubeClient, record)
+    if (!refreshed.podIp) return c.json({ error: 'pod_not_ready' }, 503)
+
+    const res = await fetch(
+      `http://${refreshed.podIp}:${refreshed.daemonPort}/prompt`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          streamingBehavior: body.streamingBehavior ?? 'followUp',
+        }),
+      },
+    )
+    const text = await res.text()
+    return new Response(text, {
+      status: res.status,
+      headers: { 'content-type': 'application/json' },
+    })
+  } catch (error) {
+    console.error('Failed to proxy prompt', error)
+    return c.json({ error: 'sandbox_prompt_failed' }, 500)
+  }
+})
+
+app.post('/sandboxes/:id/abort', async (c) => {
+  const id = c.req.param('id')
+  let body: { reason?: string } = {}
+  try {
+    body = await c.req.json()
+  } catch {
+    body = {}
+  }
+  try {
+    const kubeClient = await kubeClientPromise
+    const record = await getSandbox(id)
+    if (!record) return c.json({ error: 'not_found' }, 404)
+    const refreshed = await refreshSandboxPod(kubeClient, record)
+    if (!refreshed.podIp) return c.json({ error: 'pod_not_ready' }, 503)
+
+    const res = await fetch(
+      `http://${refreshed.podIp}:${refreshed.daemonPort}/abort`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    )
+    const text = await res.text()
+    return new Response(text, {
+      status: res.status,
+      headers: { 'content-type': 'application/json' },
+    })
+  } catch (error) {
+    console.error('Failed to proxy abort', error)
+    return c.json({ error: 'sandbox_abort_failed' }, 500)
+  }
+})
+
+app.get('/sandboxes/:id/stream/control', async (c) => {
+  const id = c.req.param('id')
+  const cursor = Number(c.req.query('cursor') ?? '0') || 0
+
+  try {
+    const kubeClient = await kubeClientPromise
+    const record = await getSandbox(id)
+    if (!record) return c.json({ error: 'not_found' }, 404)
+    const refreshed = await refreshSandboxPod(kubeClient, record)
+    const allowedTypes = new Set([
+      'sandbox_ready',
+      'repo_cloned',
+      'repo_clone_error',
+      'init_complete',
+      'prompt_queued',
+      'daemon_error',
+      'sandbox_terminated',
+    ])
+    return await proxyDaemonSse(c, refreshed, {
+      cursor,
+      filter: (event) =>
+        event.source === 'daemon' &&
+        typeof event.type === 'string' &&
+        allowedTypes.has(event.type),
+      map: (event) => {
+        const { source: _source, ...rest } = event
+        return rest
+      },
+    })
+  } catch (error) {
+    console.error('Failed to stream control events', error)
+    return c.json({ error: 'sandbox_stream_failed' }, 500)
+  }
+})
+
+app.get('/sandboxes/:id/stream/coding', async (c) => {
+  const id = c.req.param('id')
+  const cursor = Number(c.req.query('cursor') ?? '0') || 0
+
+  try {
+    const kubeClient = await kubeClientPromise
+    const record = await getSandbox(id)
+    if (!record) return c.json({ error: 'not_found' }, 404)
+    const refreshed = await refreshSandboxPod(kubeClient, record)
+    const allowedTypes = new Set([
+      'turn_start',
+      'turn_end',
+      'message_start',
+      'message_update',
+      'message_end',
+      'tool_execution_start',
+      'tool_execution_update',
+      'tool_execution_end',
+    ])
+    return await proxyDaemonSse(c, refreshed, {
+      cursor,
+      filter: (event) => {
+        if (event.source !== 'agent') return false
+        const type = typeof event.type === 'string' ? event.type : ''
+        return allowedTypes.has(type)
+      },
+      map: (event) => {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const type = typeof payload.type === 'string'
+          ? payload.type
+          : (typeof event.type === 'string' ? event.type : 'unknown')
+        return {
+          ...payload,
+          type,
+          timestamp: typeof event.timestamp === 'number'
+            ? event.timestamp
+            : Date.now(),
+        }
+      },
+    })
+  } catch (error) {
+    console.error('Failed to stream coding events', error)
+    return c.json({ error: 'sandbox_stream_failed' }, 500)
   }
 })
 

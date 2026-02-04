@@ -84,6 +84,14 @@ const zGitCheckpointConfig = z
   })
   .passthrough()
 
+const zPromptRequest = z
+  .object({
+    message: z.string(),
+    images: z.array(z.unknown()).optional(),
+    streamingBehavior: z.enum(['steer', 'followUp']).optional(),
+  })
+  .passthrough()
+
 const zInitRequest = z
   .object({
     workspace: z
@@ -91,6 +99,7 @@ const zInitRequest = z
         repos: z.array(zInitRepoConfig),
       })
       .passthrough(),
+    prompt: zPromptRequest.optional(),
     cors: z
       .object({
         allowedOrigins: z.array(z.string()),
@@ -99,14 +108,6 @@ const zInitRequest = z
       .optional(),
     gitCheckpoint: zGitCheckpointConfig.optional(),
     agent: z.unknown().optional(),
-  })
-  .passthrough()
-
-const zPromptRequest = z
-  .object({
-    message: z.string(),
-    images: z.array(z.unknown()).optional(),
-    streamingBehavior: z.enum(['steer', 'followUp']).optional(),
   })
   .passthrough()
 
@@ -240,9 +241,20 @@ export function createSandboxDaemonApp(
       try {
         await onCredentials(payload)
       } catch {
+        eventStore.append({
+          source: 'daemon',
+          type: 'daemon_error',
+          timestamp: Date.now(),
+          error: 'credentials_error',
+        })
         return c.json({ ok: false, error: 'credentials_error' }, 500)
       }
     }
+    eventStore.append({
+      source: 'daemon',
+      type: 'sandbox_ready',
+      timestamp: Date.now(),
+    })
     // Protocol 0: accept and acknowledge. Wiring to actual storage
     // and sandbox environment happens in the concrete daemon.
     return c.json({ ok: true })
@@ -265,6 +277,22 @@ export function createSandboxDaemonApp(
 
     checkpointer.setConfig(body.gitCheckpoint)
 
+    const queuedPrompt = body.prompt
+      ? {
+        ...body.prompt,
+        streamingBehavior: body.prompt.streamingBehavior ?? 'followUp',
+      }
+      : undefined
+    if (queuedPrompt) {
+      eventStore.append({
+        source: 'daemon',
+        type: 'prompt_queued',
+        timestamp: Date.now(),
+        message: queuedPrompt.message,
+        streamingBehavior: queuedPrompt.streamingBehavior,
+      })
+    }
+
     const summaries = []
     for (const repo of body.workspace.repos) {
       try {
@@ -278,12 +306,40 @@ export function createSandboxDaemonApp(
         summaries.push({ id: repo.id, path: repo.path, currentBranch })
       } catch {
         // repo_clone_error event already emitted (best-effort)
+        eventStore.append({
+          source: 'daemon',
+          type: 'daemon_error',
+          timestamp: Date.now(),
+          error: 'repo_clone_error',
+          detail: { repoId: repo.id },
+        })
         return c.json(
           { ok: false, error: 'repo_clone_error', repoId: repo.id },
           500,
         )
       }
     }
+
+    eventStore.append({
+      source: 'daemon',
+      type: 'init_complete',
+      timestamp: Date.now(),
+    })
+
+    if (queuedPrompt) {
+      try {
+        await provider.sendPrompt(queuedPrompt)
+      } catch (err) {
+        eventStore.append({
+          source: 'daemon',
+          type: 'daemon_error',
+          timestamp: Date.now(),
+          error: 'prompt_send_failed',
+          detail: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+
     const response: SandboxDaemonInitResponse = {
       ok: true,
       workspace: {
@@ -306,6 +362,13 @@ export function createSandboxDaemonApp(
     try {
       await provider.sendPrompt(body)
     } catch {
+      eventStore.append({
+        source: 'daemon',
+        type: 'daemon_error',
+        timestamp: Date.now(),
+        error: 'provider_error',
+        detail: { endpoint: 'prompt' },
+      })
       return c.json({ success: false, error: 'provider_error' }, 500)
     }
     const response: SandboxDaemonPromptResponse = {
@@ -324,6 +387,13 @@ export function createSandboxDaemonApp(
     try {
       await provider.abort(body)
     } catch {
+      eventStore.append({
+        source: 'daemon',
+        type: 'daemon_error',
+        timestamp: Date.now(),
+        error: 'provider_error',
+        detail: { endpoint: 'abort' },
+      })
       return c.json({ success: false, error: 'provider_error' }, 500)
     }
     const response: SandboxDaemonAbortResponse = {
@@ -334,10 +404,21 @@ export function createSandboxDaemonApp(
   })
 
   app.post('/shutdown', requireAdmin, async (c: Context) => {
+    eventStore.append({
+      source: 'daemon',
+      type: 'sandbox_terminated',
+      timestamp: Date.now(),
+    })
     if (onShutdown) {
       try {
         await onShutdown()
       } catch {
+        eventStore.append({
+          source: 'daemon',
+          type: 'daemon_error',
+          timestamp: Date.now(),
+          error: 'shutdown_failed',
+        })
         return c.json({ ok: false, error: 'shutdown_failed' }, 500)
       }
     }

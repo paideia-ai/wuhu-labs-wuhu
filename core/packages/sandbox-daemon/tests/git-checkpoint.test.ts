@@ -65,6 +65,7 @@ Deno.test('git checkpoint: per-turn commits and emits event', async () => {
   const turnEnd: SandboxDaemonAgentEvent = {
     source: 'agent',
     type: 'turn_end',
+    timestamp: Date.now(),
     payload: { type: 'turn_end' },
   }
   provider.emit(turnEnd)

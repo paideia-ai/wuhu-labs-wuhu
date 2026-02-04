@@ -198,6 +198,7 @@ export class PiAgentProvider implements AgentProvider {
     const event: SandboxDaemonAgentEvent = {
       source: 'agent',
       type,
+      timestamp: Date.now(),
       payload: {
         ...parsed,
         type,
