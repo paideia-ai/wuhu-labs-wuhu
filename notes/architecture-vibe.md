@@ -200,6 +200,35 @@ No agent execution yet - validate sandbox lifecycle and routing.
 - Clone into sandbox works
 - File server proves repo is there
 
+## Stage 3: Pi Agent Execution
+
+**1. Enable Persistent Sessions**
+- Remove `--no-session` flag from `pi-agent-provider.ts`
+- Pi will maintain session logs
+- Track session ID locally (SQLite or file) so daemon knows if session exists
+- On daemon start: check for existing session → resume instead of create new
+- Single persistent session per sandbox/task
+
+**2. Integrate sandbox-daemon-ui into main web app**
+- Move UI from `web/packages/sandbox-daemon-ui/` into `web/packages/app/`
+- Delete standalone sandbox-daemon-ui package (not in Deno workspace anyway)
+- Drop SPA direct-connection complexity
+- Web app proxies SSE from sandbox daemon (simpler architecture)
+
+**3. Task Creation**
+- Now includes initial prompt (repo already added in Stage 2)
+- Prompt is sent to Pi agent on sandbox start
+
+**4. Agent Chat UI**
+- Embedded in task detail page
+- SSE proxied through web app → daemon
+- Can send follow-up prompts to agent
+
+**Validates:**
+- Pi agent runs and responds
+- Session persistence survives daemon restart
+- End-to-end chat flow works
+
 ## Infrastructure Assumptions
 
 - Data broker: Redis (or Redis-over-HTTP for serverless)
