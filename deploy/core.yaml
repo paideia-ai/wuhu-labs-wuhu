@@ -14,6 +14,7 @@ spec:
       labels:
         app: core
     spec:
+      serviceAccountName: core
       containers:
         - name: core
           image: wuhu-core:latest
@@ -23,6 +24,8 @@ spec:
           env:
             - name: PORT
               value: "3000"
+            - name: SANDBOX_IMAGE
+              value: "wuhu-core:latest"
           livenessProbe:
             httpGet:
               path: /health
@@ -46,3 +49,32 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: core
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: core
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: core
+subjects:
+  - kind: ServiceAccount
+    name: core
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: core

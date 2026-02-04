@@ -439,7 +439,10 @@
       "packages/server": {
         "dependencies": [
           "jsr:@hono/hono@4",
-          "jsr:@std/assert@1"
+          "jsr:@std/assert@1",
+          "jsr:@std/path@1",
+          "jsr:@std/yaml@1",
+          "npm:drizzle-orm@0.44"
         ]
       }
     }
