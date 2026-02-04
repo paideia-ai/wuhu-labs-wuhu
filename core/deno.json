@@ -1,6 +1,7 @@
 {
   "workspace": [
     "./packages/sandbox-daemon",
+    "./packages/sandbox-cli",
     "./packages/server",
     "./packages/drizzle"
   ],
@@ -22,8 +23,8 @@
     }
   },
   "tasks": {
-    "check": "deno task --cwd=packages/sandbox-daemon check && deno task --cwd=packages/server check && deno task --cwd=packages/drizzle check",
-    "test": "deno task --cwd=packages/sandbox-daemon test && deno task --cwd=packages/server test && deno task --cwd=packages/drizzle test",
+    "check": "deno task --cwd=packages/sandbox-daemon check && deno task --cwd=packages/sandbox-cli check && deno task --cwd=packages/server check && deno task --cwd=packages/drizzle check",
+    "test": "deno task --cwd=packages/sandbox-daemon test && deno task --cwd=packages/sandbox-cli test && deno task --cwd=packages/server test && deno task --cwd=packages/drizzle test",
     "verify": "deno task check && deno task test",
     "coverage": "deno task --cwd=packages/sandbox-daemon coverage",
     "coverage:check": "deno task --cwd=packages/sandbox-daemon coverage:check",

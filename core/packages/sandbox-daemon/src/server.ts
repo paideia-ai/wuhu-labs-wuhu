@@ -36,6 +36,7 @@ import {
   postJsonWithRetry,
   postNdjsonWithRetry,
 } from './state-persistence.ts'
+import { configureWuhuCli } from './wuhu-cli.ts'
 
 import type { Context } from '@hono/hono'
 import type { MiddlewareHandler } from '@hono/hono'
@@ -384,6 +385,7 @@ export function createSandboxDaemonApp(
       : ''
     if (sandboxId && coreApiUrl) {
       persistenceConfig = { sandboxId, coreApiUrl }
+      await configureWuhuCli(workspace.root, { sandboxId, coreApiUrl })
     } else {
       persistenceConfig = null
     }

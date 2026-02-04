@@ -10,6 +10,7 @@ import { messages, sandboxes, sessions } from '@wuhu/drizzle/schema'
 import { persistSandboxState } from './state.ts'
 import { registerSessionRoutes } from './sessions-routes.ts'
 import { searchSessions } from './sessions.ts'
+import { runWuhuCli } from '@wuhu/sandbox-cli'
 
 const migrationsFolder = new URL(
   '../../drizzle/migrations',
@@ -185,6 +186,43 @@ Deno.test('Sessions endpoints validate and format responses', async () => {
         `http://core.test/sessions/sb_${crypto.randomUUID().slice(0, 12)}`,
       )
       assertEquals(missing.status, 404)
+    } finally {
+      await cleanupSandbox(db, id)
+    }
+  })
+})
+
+Deno.test('Sandbox CLI queries sessions via Core API routes', async () => {
+  await withTestDb(async (db) => {
+    const id = `sb_${crypto.randomUUID().slice(0, 12)}`
+    try {
+      await seedSandbox(db, id)
+      await persistSandboxState(db, id, {
+        cursor: 1,
+        messages: [
+          { cursor: 1, role: 'user', content: 'smoke banana', turnIndex: 1 },
+        ],
+      })
+
+      const app = new Hono()
+      registerSessionRoutes(app, db)
+
+      let stdout = ''
+      const result = await runWuhuCli(
+        ['past-sessions', 'query', 'banana', '--pretty=false'],
+        {
+          env: { WUHU_CORE_API_URL: 'http://core.test' },
+          fetchFn: async (input, init) =>
+            await app.request(String(input), init),
+          isTty: false,
+          writeStdout: (text) => void (stdout += text),
+          writeStderr: () => {},
+        },
+      )
+      assertEquals(result.code, 0)
+      const parsed = JSON.parse(stdout) as { sessions?: Array<{ id: string }> }
+      const ids = (parsed.sessions ?? []).map((s) => s.id)
+      assertEquals(ids.includes(id), true)
     } finally {
       await cleanupSandbox(db, id)
     }

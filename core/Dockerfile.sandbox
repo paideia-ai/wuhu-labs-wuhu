@@ -33,7 +33,9 @@ WORKDIR /app
 COPY deno.json deno.lock* ./
 COPY packages ./packages
 
-RUN deno cache packages/sandbox-daemon/main.ts
+RUN deno cache packages/sandbox-daemon/main.ts packages/sandbox-cli/main.ts
+
+RUN deno run -A packages/sandbox-cli/scripts/install.ts
 
 EXPOSE 8787 8066
 

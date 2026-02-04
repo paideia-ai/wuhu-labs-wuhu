@@ -978,6 +978,12 @@
           "npm:postgres@^3.4.5"
         ]
       },
+      "packages/sandbox-cli": {
+        "dependencies": [
+          "jsr:@std/assert@1",
+          "jsr:@std/path@1"
+        ]
+      },
       "packages/sandbox-daemon": {
         "dependencies": [
           "jsr:@hono/hono@4",
