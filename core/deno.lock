@@ -3,8 +3,10 @@
   "specifiers": {
     "jsr:@hono/hono@4": "4.11.7",
     "jsr:@std/assert@1": "1.0.18",
+    "jsr:@std/encoding@1": "1.0.10",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/path@1": "1.1.4",
+    "jsr:@std/yaml@1": "1.0.11",
     "npm:drizzle-kit@0.31": "0.31.8_esbuild@0.25.12",
     "npm:drizzle-orm@0.44": "0.44.7_postgres@3.4.8",
     "npm:postgres@^3.4.5": "3.4.8",
@@ -20,6 +22,9 @@
         "jsr:@std/internal"
       ]
     },
+    "@std/encoding@1.0.10": {
+      "integrity": "8783c6384a2d13abd5e9e87a7ae0520a30e9f56aeeaa3bdf910a3eaaf5c811a1"
+    },
     "@std/internal@1.0.12": {
       "integrity": "972a634fd5bc34b242024402972cd5143eac68d8dffaca5eaa4dba30ce17b027"
     },
@@ -28,6 +33,9 @@
       "dependencies": [
         "jsr:@std/internal"
       ]
+    },
+    "@std/yaml@1.0.11": {
+      "integrity": "bd139ce77f2d06cbed3713c8b26d301d2a2e12ecc7986130a268107e212143ee"
     }
   },
   "npm": {
@@ -440,6 +448,7 @@
         "dependencies": [
           "jsr:@hono/hono@4",
           "jsr:@std/assert@1",
+          "jsr:@std/encoding@1",
           "jsr:@std/path@1",
           "jsr:@std/yaml@1",
           "npm:drizzle-orm@0.44"
