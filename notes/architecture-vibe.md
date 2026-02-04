@@ -134,9 +134,9 @@ No agent execution yet - validate sandbox lifecycle and routing.
 
 **Domain:** `wuhu.liu.ms` (playground/prod)
 
-**1. Web UI - Create Task**
-- Select repo + enter initial prompt
-- Creates a K8s Job (sandbox)
+**1. Web UI - Create Sandbox**
+- Just a button/name to spawn a sandbox
+- Creates a K8s Job
 - Daemon starts but doesn't execute agent
 
 **2. Sandbox Daemon**
