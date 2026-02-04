@@ -8,10 +8,47 @@ import {
 } from '~/lib/sandbox/use-sandbox.ts'
 import type { UiMessage } from '~/lib/sandbox/types.ts'
 import { queuedPromptIsRecordedInCoding } from '~/lib/sandbox/dedup.ts'
+import {
+  persistedMessagesToUiMessages,
+  type PersistedSandboxMessage,
+} from '~/lib/sandbox/history.ts'
+import { initialCodingUiState } from '~/lib/sandbox/types.ts'
 
 function formatTimestamp(value?: number): string {
   const date = value ? new Date(value) : new Date()
   return date.toLocaleTimeString([], { hour12: false })
+}
+
+async function fetchSandbox(apiUrl: string, sandboxId: string) {
+  const response = await fetch(`${apiUrl}/sandboxes/${sandboxId}`)
+  if (!response.ok) {
+    throw new Response('Sandbox not found', { status: 404 })
+  }
+  const data = await response.json()
+  return data.sandbox
+}
+
+async function fetchSandboxMessages(apiUrl: string, sandboxId: string) {
+  const limit = 500
+  const all: PersistedSandboxMessage[] = []
+  let cursor = 0
+  for (let i = 0; i < 20; i++) {
+    const response = await fetch(
+      `${apiUrl}/sandboxes/${sandboxId}/messages?cursor=${cursor}&limit=${limit}`,
+    )
+    if (!response.ok) {
+      throw new Response('Failed to load sandbox messages', { status: 500 })
+    }
+    const data = await response.json() as {
+      messages: PersistedSandboxMessage[]
+      cursor: number
+      hasMore: boolean
+    }
+    all.push(...(Array.isArray(data.messages) ? data.messages : []))
+    cursor = typeof data.cursor === 'number' ? data.cursor : cursor
+    if (!data.hasMore) break
+  }
+  return { messages: all, cursor }
 }
 
 export async function loader({ params }: Route.LoaderArgs) {
@@ -21,12 +58,22 @@ export async function loader({ params }: Route.LoaderArgs) {
       status: 500,
     })
   }
-  const response = await fetch(`${apiUrl}/sandboxes/${params.id}`)
-  if (!response.ok) {
+
+  const sandboxId = String(params.id ?? '')
+  if (!sandboxId) {
     throw new Response('Sandbox not found', { status: 404 })
   }
-  const data = await response.json()
-  return { sandbox: data.sandbox }
+
+  const [sandbox, messagesResult] = await Promise.all([
+    fetchSandbox(apiUrl, sandboxId),
+    fetchSandboxMessages(apiUrl, sandboxId),
+  ])
+
+  return {
+    sandbox,
+    persistedMessages: messagesResult.messages,
+    persistedCursor: messagesResult.cursor,
+  }
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
@@ -49,8 +96,22 @@ export async function action({ params, request }: Route.ActionArgs) {
 }
 
 export default function SandboxDetail() {
-  const { sandbox } = useLoaderData<typeof loader>()
-  const { coding, control, connectionStatus } = useSandboxStreams(sandbox.id)
+  const { sandbox, persistedMessages, persistedCursor } = useLoaderData<
+    typeof loader
+  >()
+
+  const initialCodingState = useMemo(() => {
+    return {
+      ...initialCodingUiState,
+      cursor: persistedCursor,
+      messages: persistedMessagesToUiMessages(persistedMessages),
+    }
+  }, [persistedCursor, persistedMessages])
+
+  const { coding, control, connectionStatus } = useSandboxStreams(sandbox.id, {
+    initialCodingState,
+    reconnect: true,
+  })
   const [prompt, setPrompt] = useState('')
   const [pendingPrompts, setPendingPrompts] = useState<UiMessage[]>([])
   const [sendError, setSendError] = useState<string | null>(null)
