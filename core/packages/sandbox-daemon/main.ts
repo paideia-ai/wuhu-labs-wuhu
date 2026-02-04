@@ -1,5 +1,5 @@
 import { createSandboxDaemonApp } from './src/server.ts'
-import { FakeAgentProvider } from './src/agent-provider.ts'
+import { type AgentProvider, FakeAgentProvider } from './src/agent-provider.ts'
 import { PiAgentProvider } from './src/pi-agent-provider.ts'
 import {
   applyCredentialsToEnv,
@@ -9,7 +9,7 @@ import { LazyAgentProvider } from './src/lazy-agent-provider.ts'
 import { loadSandboxDaemonConfig } from './src/config.ts'
 import { readEnvTrimmed } from './src/env.ts'
 import { serveDir } from '@std/http/file-server'
-import { join } from '@std/path'
+import { dirname, join } from '@std/path'
 
 function fileExists(path: string): boolean {
   try {
@@ -33,17 +33,100 @@ function findOnPath(command: string): string | undefined {
   return undefined
 }
 
-function resolvePiInvocation(config: { command?: string; args?: string[] }): {
+const SESSION_STATE_PATH = '/root/.wuhu/pi-session.json'
+
+interface StoredSessionState {
+  sessionFile?: string
+}
+
+function loadStoredSessionState(): StoredSessionState | null {
+  try {
+    const raw = Deno.readTextFileSync(SESSION_STATE_PATH)
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') {
+      const sessionFile = typeof parsed.sessionFile === 'string'
+        ? parsed.sessionFile
+        : undefined
+      if (sessionFile) {
+        try {
+          const stat = Deno.statSync(sessionFile)
+          if (stat.isFile) {
+            return { sessionFile }
+          }
+        } catch {
+          // ignore missing session file
+        }
+      }
+    }
+  } catch {
+    // ignore missing/invalid state
+  }
+  return null
+}
+
+function saveStoredSessionState(state: StoredSessionState): void {
+  try {
+    Deno.mkdirSync(dirname(SESSION_STATE_PATH), { recursive: true })
+    Deno.writeTextFileSync(SESSION_STATE_PATH, JSON.stringify(state, null, 2))
+  } catch {
+    // ignore write errors
+  }
+}
+
+function removeArg(args: string[], flag: string): string[] {
+  const next: string[] = []
+  let skipNext = false
+  for (const arg of args) {
+    if (skipNext) {
+      skipNext = false
+      continue
+    }
+    if (arg === flag) {
+      if (flag === '--session') {
+        skipNext = true
+      }
+      continue
+    }
+    next.push(arg)
+  }
+  return next
+}
+
+function resolvePiArgs(
+  baseArgs: string[] | undefined,
+  sessionFile?: string,
+): string[] | undefined {
+  let args = baseArgs && baseArgs.length ? [...baseArgs] : undefined
+  if (sessionFile) {
+    if (!args) {
+      args = ['--mode', 'rpc', '--session', sessionFile]
+    } else {
+      args = removeArg(args, '--no-session')
+      if (!args.includes('--session')) {
+        args.push('--session', sessionFile)
+      }
+    }
+  }
+  return args
+}
+
+function resolvePiInvocation(
+  config: { command?: string; args?: string[] },
+  sessionFile?: string,
+): {
   command: string
   args?: string[]
 } {
   if (config.command) {
-    return { command: config.command, args: config.args }
+    return {
+      command: config.command,
+      args: resolvePiArgs(config.args, sessionFile),
+    }
   }
 
   const onPath = findOnPath('pi')
   if (onPath) {
-    return { command: 'pi', args: config.args }
+    return { command: 'pi', args: resolvePiArgs(config.args, sessionFile) }
   }
 
   // Developer fallback: run a locally-built pi CLI from ../pi-mono if present.
@@ -53,13 +136,15 @@ function resolvePiInvocation(config: { command?: string; args?: string[] }): {
   )
   const localPath = localPiCli.pathname
   if (fileExists(localPath)) {
+    const resolvedArgs = resolvePiArgs(config.args, sessionFile) ??
+      ['--mode', 'rpc']
     return {
       command: 'node',
-      args: [localPath, ...(config.args ?? ['--mode', 'rpc', '--no-session'])],
+      args: [localPath, ...resolvedArgs],
     }
   }
 
-  return { command: 'pi', args: config.args }
+  return { command: 'pi', args: resolvePiArgs(config.args, sessionFile) }
 }
 
 const config = loadSandboxDaemonConfig()
@@ -85,13 +170,14 @@ if (envOpenAiKey || envAnthropicKey) {
   })
 }
 
-const provider = agentMode === 'mock'
+const provider: AgentProvider = agentMode === 'mock'
   ? new FakeAgentProvider()
   : new LazyAgentProvider({
     getRevision: () => credentials.get().revision,
     create: () => {
       const snapshot = credentials.get()
-      const { command, args } = resolvePiInvocation(config.pi)
+      const sessionFile = loadStoredSessionState()?.sessionFile
+      const { command, args } = resolvePiInvocation(config.pi, sessionFile)
       const cwd = config.pi.cwd
       return new PiAgentProvider({
         command,
@@ -137,6 +223,7 @@ const { app } = createSandboxDaemonApp({
     applyCredentialsToEnv(payload)
     credentials.set(payload)
     await provider.start()
+    await persistSessionFile(provider)
   },
   auth: config.jwt.enabled
     ? { secret: config.jwt.secret, issuer: config.jwt.issuer, enabled: true }
@@ -145,8 +232,23 @@ const { app } = createSandboxDaemonApp({
   onShutdown: shutdown,
 })
 
+async function persistSessionFile(providerInstance: AgentProvider) {
+  if (!providerInstance.getState) return
+  try {
+    const state = await providerInstance.getState()
+    const sessionFile = state?.sessionFile ?? null
+    if (!sessionFile) return
+    const stored = loadStoredSessionState()?.sessionFile
+    if (stored === sessionFile) return
+    saveStoredSessionState({ sessionFile })
+  } catch {
+    // ignore persistence errors
+  }
+}
+
 try {
   await provider.start()
+  await persistSessionFile(provider)
 } catch {
   console.error(
     'sandbox-daemon: agent provider failed to start (install `pi` or set SANDBOX_DAEMON_AGENT_MODE=mock)',

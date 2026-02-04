@@ -27,7 +27,7 @@ Example without a global `pi` install:
 
 ```bash
 export SANDBOX_DAEMON_PI_COMMAND=npx
-export SANDBOX_DAEMON_PI_ARGS='-y @mariozechner/pi-coding-agent --mode rpc --no-session'
+export SANDBOX_DAEMON_PI_ARGS='-y @mariozechner/pi-coding-agent --mode rpc'
 ```
 
 ### JWT auth (optional)

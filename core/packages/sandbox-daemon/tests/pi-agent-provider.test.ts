@@ -80,3 +80,27 @@ Deno.test('PiAgentProvider emits agent events for non-response lines', async () 
   assertEquals(event.type, 'message_update')
   assertEquals(event.payload.text, 'hi')
 })
+
+Deno.test('PiAgentProvider getState reads session file from response', async () => {
+  const transport = new FakePiTransport()
+  const provider = new PiAgentProvider({ transport })
+
+  await provider.start()
+
+  const statePromise = provider.getState()
+  const sent = JSON.parse(transport.lines[0]) as { id: string }
+  transport.emit(
+    JSON.stringify({
+      type: 'response',
+      id: sent.id,
+      success: true,
+      command: 'get_state',
+      data: {
+        sessionFile: '/root/.pi/agent/sessions/session.jsonl',
+      },
+    }),
+  )
+
+  const state = await statePromise
+  assertEquals(state?.sessionFile, '/root/.pi/agent/sessions/session.jsonl')
+})

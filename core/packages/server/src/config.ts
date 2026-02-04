@@ -15,6 +15,11 @@ export interface RedisConfig {
   url: string
 }
 
+export interface LlmConfig {
+  openaiApiKey?: string
+  anthropicApiKey?: string
+}
+
 export interface KubeConfigOptions {
   kubeconfigPath?: string
   context?: string
@@ -25,6 +30,7 @@ export interface AppConfig {
   sandbox: SandboxConfig
   github: GithubConfig
   redis: RedisConfig
+  llm: LlmConfig
   kube: KubeConfigOptions
 }
 
@@ -36,6 +42,8 @@ export function loadConfig(): AppConfig {
   const previewDomain = Deno.env.get('SANDBOX_PREVIEW_DOMAIN') ??
     'wuhu.liu.ms'
   const githubToken = Deno.env.get('GITHUB_TOKEN') ?? undefined
+  const openaiApiKey = Deno.env.get('OPENAI_API_KEY') ?? undefined
+  const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY') ?? undefined
   const allowedOrgs = (Deno.env.get('GITHUB_ALLOWED_ORGS') ?? '')
     .split(',')
     .map((org) => org.trim())
@@ -57,6 +65,10 @@ export function loadConfig(): AppConfig {
     },
     redis: {
       url: redisUrl,
+    },
+    llm: {
+      openaiApiKey,
+      anthropicApiKey,
     },
     kube: {
       kubeconfigPath: Deno.env.get('KUBECONFIG') ?? undefined,
