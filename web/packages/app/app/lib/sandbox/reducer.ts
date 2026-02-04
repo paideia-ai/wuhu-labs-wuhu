@@ -270,6 +270,7 @@ export function reduceCodingEnvelope(
       thinking,
       toolCalls,
       status,
+      cursor,
       timestamp: formatTimestamp(timestamp),
     }
 
@@ -326,7 +327,38 @@ export function reduceControlEnvelope(
     case 'init_complete':
       return { ...next, statusLabel: 'Initialized', error: undefined }
     case 'prompt_queued':
-      return { ...next, statusLabel: 'Prompt queued', error: undefined }
+      return (() => {
+        const record: Record<string, unknown> = isRecord(event) ? event : {}
+        const message = typeof record['message'] === 'string'
+          ? record['message']
+          : ''
+        const timestamp = typeof record['timestamp'] === 'number'
+          ? record['timestamp']
+          : undefined
+        let streamingBehavior: 'steer' | 'followUp' | undefined = undefined
+        const rawStreamingBehavior = record['streamingBehavior']
+        if (
+          rawStreamingBehavior === 'steer' ||
+          rawStreamingBehavior === 'followUp'
+        ) {
+          streamingBehavior = rawStreamingBehavior
+        }
+
+        return {
+          ...next,
+          statusLabel: 'Prompt queued',
+          error: undefined,
+          prompts: [
+            ...next.prompts,
+            {
+              cursor: envelope.cursor,
+              message,
+              timestamp,
+              streamingBehavior,
+            },
+          ].filter((p) => p.message).slice(-50),
+        }
+      })()
     case 'daemon_error': {
       const error = isRecord(event) && typeof event.error === 'string'
         ? event.error

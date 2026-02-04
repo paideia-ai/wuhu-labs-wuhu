@@ -371,6 +371,13 @@ export function createSandboxDaemonApp(
       })
       return c.json({ success: false, error: 'provider_error' }, 500)
     }
+    eventStore.append({
+      source: 'daemon',
+      type: 'prompt_queued',
+      timestamp: Date.now(),
+      message: body.message,
+      streamingBehavior: body.streamingBehavior ?? 'followUp',
+    })
     const response: SandboxDaemonPromptResponse = {
       success: true,
       command: 'prompt',

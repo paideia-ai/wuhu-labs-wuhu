@@ -41,6 +41,72 @@ Deno.test('POST /prompt forwards to provider and returns success', async () => {
   assertEquals(json, { success: true, command: 'prompt' })
   assertEquals(provider.prompts.length, 1)
   assertEquals(provider.prompts[0].message, 'Hello, daemon')
+
+  const stream = await app.request('/stream?cursor=0', { method: 'GET' })
+  assertEquals(stream.status, 200)
+  const text = await stream.text()
+  const dataLines = text.split('\n').filter((line: string) =>
+    line.startsWith('data: ')
+  )
+  const envelopes = dataLines.map((line) =>
+    JSON.parse(line.slice('data: '.length))
+  )
+  const promptQueued = envelopes.find((env) =>
+    env?.event?.type === 'prompt_queued'
+  )
+  assertEquals(promptQueued?.event?.message, 'Hello, daemon')
+})
+
+Deno.test('POST /prompt emits daemon_error when provider fails', async () => {
+  class ErrorPromptProvider extends FakeAgentProvider {
+    override sendPrompt(_request: SandboxDaemonPromptRequest): Promise<void> {
+      return Promise.reject(new Error('provider exploded'))
+    }
+  }
+
+  const provider = new ErrorPromptProvider()
+  const { app } = createSandboxDaemonApp({ provider })
+
+  const res = await app.request('/prompt', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(
+      {
+        message: 'boom',
+      } satisfies SandboxDaemonPromptRequest,
+    ),
+  })
+
+  assertEquals(res.status, 500)
+
+  const stream = await app.request('/stream?cursor=0', { method: 'GET' })
+  assertEquals(stream.status, 200)
+  const text = await stream.text()
+  const dataLines = text.split('\n').filter((line: string) =>
+    line.startsWith('data: ')
+  )
+  const envelopes = dataLines.map((line) =>
+    JSON.parse(line.slice('data: '.length))
+  )
+  const daemonError = envelopes.find((env) =>
+    env?.event?.type === 'daemon_error'
+  )
+  assertEquals(daemonError?.event?.error, 'provider_error')
+})
+
+Deno.test('POST /abort forwards to provider and returns success', async () => {
+  const provider = new FakeAgentProvider()
+  const { app } = createSandboxDaemonApp({ provider })
+
+  const res = await app.request('/abort', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reason: 'user_abort' }),
+  })
+
+  assertEquals(res.status, 200)
+  assertEquals(await res.json(), { success: true, command: 'abort' })
+  assertEquals(provider.abortCalls, 1)
 })
 
 Deno.test('GET /stream returns SSE with agent events from cursor', async () => {

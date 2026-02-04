@@ -46,6 +46,7 @@ export interface UiMessage {
   thinking?: string
   toolCalls?: ToolCallSummary[]
   status: MessageStatus
+  cursor?: number
   timestamp?: string
 }
 
@@ -102,6 +103,12 @@ export interface ControlUiState {
   lastEventType?: string
   statusLabel: string
   error?: string
+  prompts: Array<{
+    cursor: number
+    message: string
+    timestamp?: number
+    streamingBehavior?: 'steer' | 'followUp'
+  }>
 }
 
 export const initialControlUiState: ControlUiState = {
@@ -109,4 +116,5 @@ export const initialControlUiState: ControlUiState = {
   lastEventType: undefined,
   statusLabel: 'Unknown',
   error: undefined,
+  prompts: [],
 }
