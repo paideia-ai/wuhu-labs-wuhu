@@ -144,24 +144,24 @@ async function createAuthForKubeconfig(
     caCerts.push(await Deno.readTextFile(caPath))
   }
 
-  let certChain: string | undefined
-  let privateKey: string | undefined
+  let cert: string | undefined
+  let key: string | undefined
   if (user.user['client-certificate-data']) {
-    certChain = decodeBase64Text(user.user['client-certificate-data'])
+    cert = decodeBase64Text(user.user['client-certificate-data'])
   }
   if (user.user['client-key-data']) {
-    privateKey = decodeBase64Text(user.user['client-key-data'])
+    key = decodeBase64Text(user.user['client-key-data'])
   }
 
-  if (caCerts.length || certChain || privateKey) {
+  if (caCerts.length || cert || key) {
     client = Deno.createHttpClient({
       caCerts: caCerts.length ? caCerts : undefined,
-      certChain,
-      privateKey,
+      cert,
+      key,
     })
   }
 
-  if (!headers.has('authorization') && !certChain && !privateKey) {
+  if (!headers.has('authorization') && !cert && !key) {
     throw new Error(
       'KUBECONFIG user auth missing (token or client certificate)',
     )

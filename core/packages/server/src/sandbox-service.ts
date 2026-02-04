@@ -65,12 +65,17 @@ export async function listSandboxes(options?: {
   includeTerminated?: boolean
 }): Promise<SandboxRecord[]> {
   const includeTerminated = options?.includeTerminated ?? false
-  let query = db.select().from(sandboxes)
-    .orderBy(desc(sandboxes.createdAt))
   if (!includeTerminated) {
-    query = query.where(ne(sandboxes.status, 'terminated'))
+    return await db
+      .select()
+      .from(sandboxes)
+      .where(ne(sandboxes.status, 'terminated'))
+      .orderBy(desc(sandboxes.createdAt))
   }
-  return await query
+  return await db
+    .select()
+    .from(sandboxes)
+    .orderBy(desc(sandboxes.createdAt))
 }
 
 export async function getSandbox(
