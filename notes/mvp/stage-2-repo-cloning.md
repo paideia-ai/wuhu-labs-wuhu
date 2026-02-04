@@ -4,6 +4,8 @@
 
 - GitHub PAT stored as K8s secret (`github-pat`)
 - Scopes: `repo` + `workflow`
+- Core server reads PAT from `GITHUB_TOKEN` env
+- Core passes PAT to sandbox daemon via `POST /credentials` (daemon sets `GITHUB_TOKEN`)
 - `GITHUB_ALLOWED_ORGS` env var filters which orgs' repos are returned (comma-separated)
   - e.g., `GITHUB_ALLOWED_ORGS=paideia-ai,wuhu-labs`
   - Only repos from these orgs appear in the listing
