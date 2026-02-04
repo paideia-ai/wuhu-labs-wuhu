@@ -148,11 +148,19 @@ No agent execution yet - validate sandbox lifecycle and routing.
 - Show preview URL for the static server (easy copy)
 - Pattern: `<sandbox-id>-<port>.wuhu.liu.ms`
 
-**3. Preview URL Routing (Traefik)**
+**3. Preview URL Routing (Traefik Plugin)**
 - Expose sandbox ports via wildcard subdomain
 - Pattern: `<sandbox-id>-<port>.wuhu.liu.ms`
 - Uses existing `*.wuhu.liu.ms` DNS/cert (no infra changes)
-- Traefik routes based on host prefix
+
+**Plugin details:**
+- Go plugin loaded in-process by Traefik (via Yaegi interpreter)
+- Must be Go - Traefik requirement
+- Plugin logic:
+  1. Parse host: extract sandbox ID + port from `<id>-<port>.wuhu.liu.ms`
+  2. Call core service for pod IP lookup: `GET http://core/sandbox-lookup?id=<id>`
+  3. Proxy request to `<pod-ip>:<port>`
+- Core service maintains sandbox → pod IP mapping (state lives in our code, not plugin)
 
 **4. Web UI - Sandbox List**
 - Show all active sandboxes
