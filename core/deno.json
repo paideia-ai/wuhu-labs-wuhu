@@ -2,22 +2,16 @@
   "workspace": [
     "./packages/sandbox-daemon",
     "./packages/server",
-    "./packages/prisma"
+    "./packages/drizzle"
   ],
   "fmt": {
     "indentWidth": 2,
     "semiColons": false,
-    "singleQuote": true,
-    "exclude": [
-      "packages/prisma/generated/"
-    ]
+    "singleQuote": true
   },
   "lint": {
     "include": [
       "packages/"
-    ],
-    "exclude": [
-      "packages/prisma/generated/"
     ],
     "rules": {
       "exclude": [
@@ -33,8 +27,7 @@
     "verify": "deno task -r check && deno task -r test",
     "coverage": "deno task --cwd=packages/sandbox-daemon coverage",
     "coverage:check": "deno task --cwd=packages/sandbox-daemon coverage:check",
-    "prisma:gen": "cd prisma && npx prisma generate",
-    "prisma:push": "cd prisma && npx prisma db push"
+    "db:generate": "deno task --cwd=packages/drizzle db:generate"
   },
   "imports": {
     "@std/path": "jsr:@std/path@^1"

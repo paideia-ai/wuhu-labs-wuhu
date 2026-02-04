@@ -1,0 +1,17 @@
+{
+  "name": "@wuhu/drizzle",
+  "exports": {
+    ".": "./mod.ts",
+    "./schema": "./schema.ts"
+  },
+  "imports": {
+    "drizzle-orm": "npm:drizzle-orm@^0.44.0",
+    "drizzle-orm/pg-core": "npm:drizzle-orm@^0.44.0/pg-core",
+    "drizzle-orm/postgres-js": "npm:drizzle-orm@^0.44.0/postgres-js",
+    "drizzle-kit/api": "npm:drizzle-kit@^0.31.0/api",
+    "postgres": "npm:postgres@^3.4.5"
+  },
+  "tasks": {
+    "db:generate": "deno run -A ./generate-migration.ts"
+  }
+}

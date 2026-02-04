@@ -50,20 +50,6 @@ jobs:
           cache: true
           deno-version: v2.x
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      # Prisma setup (core)
-      - name: Generate Prisma client (core)
-        run: deno task prisma:gen
-        working-directory: core
-
-      - name: Push Prisma schema (core)
-        run: deno task prisma:push
-        working-directory: core
-
       # Core checks
       - name: Check formatting (core)
         run: deno fmt --check
