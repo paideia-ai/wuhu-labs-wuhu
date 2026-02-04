@@ -44,6 +44,15 @@ function extractMessageParts(message: any): {
     }[],
   }
 
+  const directText = message?.text
+  if (typeof directText === 'string') {
+    parts.text = directText
+  }
+  const directThinking = message?.thinking
+  if (typeof directThinking === 'string') {
+    parts.thinking = directThinking
+  }
+
   const content = message?.content
   if (typeof content === 'string') {
     parts.text = content
@@ -178,6 +187,21 @@ function nextAgentStatus(
   }
 }
 
+function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (predicate(items[i])) return i
+  }
+  return -1
+}
+
+function coerceStreamingTextDelta(payload: Record<string, unknown>): string {
+  const text = payload.text
+  if (typeof text === 'string') return text
+  const delta = payload.delta
+  if (typeof delta === 'string') return delta
+  return ''
+}
+
 export function reduceEnvelope(
   state: UiState,
   envelope: StreamEnvelope<SandboxDaemonEvent>,
@@ -221,41 +245,115 @@ export function reduceEnvelope(
   let messages = next.messages
 
   if (t === 'message_start' || t === 'message_update' || t === 'message_end') {
-    const message = (payload as any).message
-    const { role, text, thinking, toolCalls, timestamp } = extractMessageParts(
-      message,
-    )
+    const payloadRecord = payload as Record<string, unknown>
+    const message = (payloadRecord as any).message
+    const textDelta = !message ? coerceStreamingTextDelta(payloadRecord) : ''
 
-    let status: UiMessage['status'] = 'streaming'
-    if (t === 'message_end') status = 'complete'
-
-    // Generate a stable-ish id per message by role + timestamp + optional signatures
-    const sig = (message && typeof message.textSignature === 'string'
-      ? message.textSignature
-      : message && typeof message.thinkingSignature === 'string'
-      ? message.thinkingSignature
-      : '') ||
-      `${role}-${timestamp ?? ''}`
-    const id = sig || `msg-${cursor}`
-
-    const base: UiMessage = {
-      id,
-      role: role === 'toolResult' ? 'tool' : (role as any),
-      title: role === 'user'
-        ? 'You'
-        : role === 'assistant'
-        ? 'Agent'
-        : role === 'toolResult'
-        ? message.toolName || 'Tool result'
-        : role,
-      text,
-      thinking,
-      toolCalls,
-      status,
-      timestamp: formatTimestamp(timestamp),
+    if (!message && !textDelta && t !== 'message_end') {
+      return {
+        ...next,
+        activities,
+        messages,
+        agentStatus: nextAgentStatus(next.agentStatus, agentEvent),
+      }
     }
 
-    messages = upsertMessage(messages, base)
+    if (!message) {
+      const role = typeof payloadRecord.role === 'string'
+        ? payloadRecord.role
+        : 'assistant'
+      const isStreaming = t !== 'message_end'
+      const existingIdx = findLastIndex(
+        messages,
+        (m) => m.status === 'streaming' && m.role === (role as any),
+      )
+
+      if (existingIdx === -1) {
+        if (!textDelta && t === 'message_end') {
+          return {
+            ...next,
+            activities,
+            messages,
+            agentStatus: nextAgentStatus(next.agentStatus, agentEvent),
+          }
+        }
+        const id = `pi-msg-${cursor}-${role}`
+        messages = upsertMessage(messages, {
+          id,
+          role: role as any,
+          title: role === 'user'
+            ? 'You'
+            : role === 'assistant'
+            ? 'Agent'
+            : role,
+          text: textDelta,
+          status: isStreaming ? 'streaming' : 'complete',
+          timestamp: formatTimestamp(
+            typeof payloadRecord.timestamp === 'number'
+              ? payloadRecord.timestamp
+              : undefined,
+          ),
+        })
+      } else {
+        const existing = messages[existingIdx]
+        const existingText = existing.text ?? ''
+        let nextText = existingText
+        if (textDelta) {
+          if (
+            existingText &&
+            textDelta.length >= existingText.length &&
+            textDelta.startsWith(existingText)
+          ) {
+            nextText = textDelta
+          } else if (existingText && existingText.startsWith(textDelta)) {
+            nextText = existingText
+          } else {
+            nextText = existingText + textDelta
+          }
+        }
+        messages = upsertMessage(messages, {
+          ...existing,
+          text: nextText,
+          status: isStreaming ? 'streaming' : 'complete',
+        })
+      }
+    } else {
+      const { role, text, thinking, toolCalls, timestamp } =
+        extractMessageParts(
+          message,
+        )
+
+      let status: UiMessage['status'] = 'streaming'
+      if (t === 'message_end') status = 'complete'
+
+      // Generate a stable-ish id per message by role + timestamp + optional signatures
+      const sig = (message && typeof message.textSignature === 'string'
+        ? message.textSignature
+        : message && typeof message.thinkingSignature === 'string'
+        ? message.thinkingSignature
+        : '') ||
+        `${role}-${timestamp ?? ''}`
+      const id = sig || `msg-${cursor}`
+
+      const base: UiMessage = {
+        id,
+        role: role === 'toolResult' ? 'tool' : (role as any),
+        title: role === 'user'
+          ? 'You'
+          : role === 'assistant'
+          ? 'Agent'
+          : role === 'toolResult'
+          ? message.toolName || 'Tool result'
+          : role,
+        text,
+        thinking,
+        toolCalls,
+        status,
+        timestamp: formatTimestamp(timestamp),
+      }
+
+      messages = upsertMessage(messages, base)
+    }
   }
 
   if (t === 'turn_end') {

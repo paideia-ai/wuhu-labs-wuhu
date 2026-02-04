@@ -83,3 +83,50 @@ Deno.test('reduceCodingEnvelope supports clear_activities', () => {
   assertEquals(next.cursor, base.cursor)
   assertEquals(next.lastEventType, base.lastEventType)
 })
+
+Deno.test('reduceCodingEnvelope appends protocol-0 text deltas', () => {
+  const state0 = initialCodingUiState
+  const state1 = reduceCodingEnvelope(state0, {
+    cursor: 1,
+    event: {
+      source: 'agent',
+      type: 'message_update',
+      payload: { type: 'message_update', text: 'hi ' },
+    },
+  })
+  const state2 = reduceCodingEnvelope(state1, {
+    cursor: 2,
+    event: {
+      source: 'agent',
+      type: 'message_update',
+      payload: { type: 'message_update', text: 'there' },
+    },
+  })
+  const state3 = reduceCodingEnvelope(state2, {
+    cursor: 3,
+    event: { source: 'agent', type: 'turn_end', payload: { type: 'turn_end' } },
+  })
+
+  assertEquals(state3.messages.length, 1)
+  assertEquals(state3.messages[0].role, 'assistant')
+  assertEquals(state3.messages[0].text, 'hi there')
+  assertEquals(state3.messages[0].status, 'complete')
+})
+
+Deno.test('reduceCodingEnvelope reads message.text when content missing', () => {
+  const state = reduceCodingEnvelope(initialCodingUiState, {
+    cursor: 1,
+    event: {
+      source: 'agent',
+      type: 'message_end',
+      payload: {
+        type: 'message_end',
+        message: { role: 'assistant', text: 'hello', timestamp: 123 },
+      },
+    },
+  })
+
+  assertEquals(state.messages.length, 1)
+  assertEquals(state.messages[0].text, 'hello')
+  assertEquals(state.messages[0].status, 'complete')
+})
