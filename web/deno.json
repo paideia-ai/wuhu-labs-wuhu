@@ -18,5 +18,8 @@
         "no-window"
       ]
     }
+  },
+  "tasks": {
+    "test": "deno test -A packages/app"
   }
 }
