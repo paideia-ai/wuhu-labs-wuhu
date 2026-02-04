@@ -1,5 +1,14 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react'
 import type {
+  CodingUiState,
+  ControlUiState,
   SandboxControlEvent,
   SandboxDaemonAgentEventPayload,
   SandboxDaemonEvent,
@@ -76,26 +85,64 @@ function isAbortError(err: unknown): boolean {
   return err.name === 'AbortError'
 }
 
-export function useSandboxStreams(id: string) {
-  const [coding, dispatchCoding] = useReducer(
-    reduceCodingEnvelope,
-    initialCodingUiState,
-  )
+type CodingAction =
+  | { type: 'RESET'; state: CodingUiState }
+  | { type: 'ENVELOPE'; envelope: StreamEnvelope<SandboxDaemonEvent> }
 
-  const [control, dispatchControl] = useReducer(
-    reduceControlEnvelope,
-    initialControlUiState,
-  )
+type ControlAction =
+  | { type: 'RESET'; state: ControlUiState }
+  | { type: 'ENVELOPE'; envelope: StreamEnvelope<SandboxControlEvent> }
+
+function codingReducer(
+  state: CodingUiState,
+  action: CodingAction,
+): CodingUiState {
+  if (action.type === 'RESET') return action.state
+  return reduceCodingEnvelope(state, action.envelope)
+}
+
+function controlReducer(
+  state: ControlUiState,
+  action: ControlAction,
+): ControlUiState {
+  if (action.type === 'RESET') return action.state
+  return reduceControlEnvelope(state, action.envelope)
+}
+
+function nextReconnectDelayMs(attempt: number): number {
+  const base = Math.min(1000 * 2 ** Math.min(attempt, 6), 15_000)
+  const jitter = Math.floor(Math.random() * 250)
+  return base + jitter
+}
+
+export type SandboxStreamsOptions = {
+  initialCodingState?: CodingUiState
+  initialControlState?: ControlUiState
+  reconnect?: boolean
+}
+
+export function useSandboxStreams(
+  id: string,
+  options: SandboxStreamsOptions = {},
+) {
+  const reconnect = options.reconnect ?? false
+  const initialCoding = options.initialCodingState ?? initialCodingUiState
+  const initialControl = options.initialControlState ?? initialControlUiState
+
+  const [coding, dispatchCoding] = useReducer(codingReducer, initialCoding)
+  const [control, dispatchControl] = useReducer(controlReducer, initialControl)
 
   const [connectionStatus, setConnectionStatus] = useState('Disconnected')
   const abortRef = useRef<AbortController | null>(null)
+  const codingCursorRef = useRef<number>(initialCoding.cursor)
+  const controlCursorRef = useRef<number>(initialControl.cursor)
 
-  const stop = () => {
+  const stop = useCallback(() => {
     abortRef.current?.abort()
     abortRef.current = null
-  }
+  }, [])
 
-  const start = () => {
+  const start = useCallback(() => {
     if (!id) return
     stop()
     const controller = new AbortController()
@@ -103,59 +150,95 @@ export function useSandboxStreams(id: string) {
     setConnectionStatus('Connecting...')
 
     const runStream = async (
-      url: string,
-      onEnvelope: (env: StreamEnvelope<unknown>) => void,
+      streamName: 'control' | 'coding',
+      url: () => string,
+      onEnvelope: (env: StreamEnvelope<unknown>) => boolean | void,
+      cursorRef: { current: number },
     ) => {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: { accept: 'text/event-stream' },
-        signal: controller.signal,
-      })
-      if (!res.ok || !res.body) {
-        const text = await res.text().catch(() => '')
-        throw new Error(`stream_failed (${res.status}): ${text}`)
-      }
+      let attempt = 0
+      while (!controller.signal.aborted) {
+        try {
+          const res = await fetch(url(), {
+            method: 'GET',
+            headers: { accept: 'text/event-stream' },
+            signal: controller.signal,
+          })
+          if (!res.ok || !res.body) {
+            const text = await res.text().catch(() => '')
+            throw new Error(`stream_failed (${res.status}): ${text}`)
+          }
 
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
+          attempt = 0
 
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split(/\r?\n\r?\n/)
-        buffer = parts.pop() ?? ''
+          const reader = res.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
 
-        for (const part of parts) {
-          if (!part.trim()) continue
-          const parsed = parseSseChunk(part)
-          if (!parsed.data) continue
-          const env = parseEnvelope(parsed.data)
-          if (env) onEnvelope(env)
+          while (!controller.signal.aborted) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const parts = buffer.split(/\r?\n\r?\n/)
+            buffer = parts.pop() ?? ''
+
+            for (const part of parts) {
+              if (!part.trim()) continue
+              const parsed = parseSseChunk(part)
+              if (!parsed.data) continue
+              const env = parseEnvelope(parsed.data)
+              if (!env) continue
+              if (env.cursor <= cursorRef.current) continue
+              const processed = onEnvelope(env)
+              if (processed === false) continue
+              cursorRef.current = env.cursor
+            }
+          }
+        } catch (err) {
+          if (controller.signal.aborted) break
+          if (!isAbortError(err)) {
+            console.error(`${streamName} SSE stream error`, err)
+          }
         }
+
+        if (!reconnect) break
+        attempt += 1
+        const delay = nextReconnectDelayMs(attempt)
+        await new Promise((resolve) => setTimeout(resolve, delay))
       }
     }
 
-    const controlUrl = `/api/sandboxes/${
-      encodeURIComponent(id)
-    }/stream/control?cursor=${control.cursor}`
-    const codingUrl = `/api/sandboxes/${
-      encodeURIComponent(id)
-    }/stream/coding?cursor=${coding.cursor}`
+    const controlUrl = () =>
+      `/api/sandboxes/${
+        encodeURIComponent(id)
+      }/stream/control?cursor=${controlCursorRef.current}`
+    const codingUrl = () =>
+      `/api/sandboxes/${
+        encodeURIComponent(id)
+      }/stream/coding?cursor=${codingCursorRef.current}`
     ;(async () => {
       try {
         setConnectionStatus('Connected')
         await Promise.all([
           runStream(
+            'control',
             controlUrl,
             (env) =>
-              dispatchControl(env as StreamEnvelope<SandboxControlEvent>),
+              dispatchControl({
+                type: 'ENVELOPE',
+                envelope: env as StreamEnvelope<SandboxControlEvent>,
+              }),
+            controlCursorRef,
           ),
-          runStream(codingUrl, (env) => {
-            const coerced = coerceCodingEnvelope(env)
-            if (coerced) dispatchCoding(coerced)
-          }),
+          runStream(
+            'coding',
+            codingUrl,
+            (env) => {
+              const coerced = coerceCodingEnvelope(env)
+              if (!coerced) return false
+              dispatchCoding({ type: 'ENVELOPE', envelope: coerced })
+            },
+            codingCursorRef,
+          ),
         ])
       } catch (err) {
         if (!isAbortError(err)) {
@@ -168,12 +251,35 @@ export function useSandboxStreams(id: string) {
         }
       }
     })()
-  }
+  }, [id, reconnect, stop])
 
   useEffect(() => {
+    codingCursorRef.current = initialCoding.cursor
+    controlCursorRef.current = initialControl.cursor
+    dispatchCoding({ type: 'RESET', state: initialCoding })
+    dispatchControl({ type: 'RESET', state: initialControl })
     start()
     return () => stop()
-  }, [id])
+  }, [id, initialCoding, initialControl, start])
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return
+      if (!reconnect) return
+      if (
+        connectionStatus === 'Disconnected' ||
+        connectionStatus === 'Stream error'
+      ) {
+        start()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    globalThis.addEventListener('focus', onVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      globalThis.removeEventListener('focus', onVisibility)
+    }
+  }, [connectionStatus, reconnect, start])
 
   const api = useMemo(() => {
     return {
