@@ -65,13 +65,19 @@ export async function action({ request }: Route.ActionArgs) {
   if (actionType === 'create') {
     const name = String(formData.get('name') ?? '').trim()
     const repo = String(formData.get('repo') ?? '').trim()
+    const prompt = String(formData.get('prompt') ?? '').trim()
     if (!repo) {
       throw new Response('Repo is required', { status: 400 })
     }
+    const body: { name: string | null; repo: string; prompt?: string } = {
+      name: name || null,
+      repo,
+    }
+    if (prompt) body.prompt = prompt
     const response = await fetch(`${apiUrl}/sandboxes`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: name || null, repo }),
+      body: JSON.stringify(body),
     })
     const payload = await response.json()
     if (!response.ok) {
@@ -118,9 +124,15 @@ export default function Index() {
           style={{
             display: 'grid',
             gap: '0.5rem',
-            gridTemplateColumns: '2fr 1fr auto',
+            gridTemplateColumns: '2fr 1fr',
           }}
         >
+          <textarea
+            name='prompt'
+            placeholder='Prompt (optional) — what should the agent do?'
+            rows={3}
+            style={{ padding: '0.5rem', gridColumn: '1 / -1' }}
+          />
           <input
             type='text'
             name='name'
@@ -136,14 +148,16 @@ export default function Index() {
               </option>
             ))}
           </select>
-          <button
-            type='submit'
-            name='_action'
-            value='create'
-            disabled={repos.length === 0}
-          >
-            Create
-          </button>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '0.5rem' }}>
+            <button
+              type='submit'
+              name='_action'
+              value='create'
+              disabled={repos.length === 0}
+            >
+              Create
+            </button>
+          </div>
         </Form>
       </section>
 
