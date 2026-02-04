@@ -138,29 +138,25 @@ async function postDaemonCredentials(
   if (!record.podIp) return
   const hasLlm = Boolean(llm.openaiApiKey || llm.anthropicApiKey)
   if (!token && !hasLlm) return
-  try {
-    const response = await fetch(
-      `http://${record.podIp}:${record.daemonPort}/credentials`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          version: 'core',
-          github: token ? { token } : undefined,
-          llm: hasLlm
-            ? {
-              openaiApiKey: llm.openaiApiKey,
-              anthropicApiKey: llm.anthropicApiKey,
-            }
-            : undefined,
-        }),
-      },
-    )
-    if (!response.ok) {
-      console.warn('sandbox credentials failed', await response.text())
-    }
-  } catch (error) {
-    console.warn('sandbox credentials request failed', error)
+  const response = await fetch(
+    `http://${record.podIp}:${record.daemonPort}/credentials`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        version: 'core',
+        github: token ? { token } : undefined,
+        llm: hasLlm
+          ? {
+            openaiApiKey: llm.openaiApiKey,
+            anthropicApiKey: llm.anthropicApiKey,
+          }
+          : undefined,
+      }),
+    },
+  )
+  if (!response.ok) {
+    throw new Error(await response.text())
   }
 }
 
@@ -170,34 +166,50 @@ async function initSandboxRepo(
   prompt: string,
 ): Promise<void> {
   if (!record.podIp) return
-  try {
-    const response = await fetch(
-      `http://${record.podIp}:${record.daemonPort}/init`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          workspace: {
-            repos: [
-              {
-                id: repoFullName,
-                source: `github:${repoFullName}`,
-                path: 'repo',
-              },
-            ],
-          },
-          agent: {
-            initialPrompt: prompt,
-          },
-        }),
-      },
-    )
-    if (!response.ok) {
-      console.warn('sandbox init failed', await response.text())
-    }
-  } catch (error) {
-    console.warn('sandbox init request failed', error)
+  const response = await fetch(
+    `http://${record.podIp}:${record.daemonPort}/init`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        workspace: {
+          repos: [
+            {
+              id: repoFullName,
+              source: `github:${repoFullName}`,
+              path: 'repo',
+            },
+          ],
+        },
+        agent: {
+          initialPrompt: prompt,
+        },
+      }),
+    },
+  )
+  if (!response.ok) {
+    throw new Error(await response.text())
   }
+}
+
+async function retryDaemonCall(
+  label: string,
+  fn: () => Promise<void>,
+  options?: { attempts?: number; delayMs?: number },
+): Promise<void> {
+  const attempts = options?.attempts ?? 20
+  const delayMs = options?.delayMs ?? 1000
+  let lastError: unknown
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await fn()
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+  console.warn(`${label} failed after ${attempts} attempts`, lastError)
 }
 
 app.get('/', (c) => {
@@ -276,8 +288,14 @@ app.post('/sandboxes', async (c) => {
         console.warn('sandbox pod did not become ready in time', record.id)
         return
       }
-      await postDaemonCredentials(ready, config.github.token, config.llm)
-      await initSandboxRepo(ready, repo, prompt)
+      await retryDaemonCall(
+        'sandbox credentials',
+        () => postDaemonCredentials(ready, config.github.token, config.llm),
+      )
+      await retryDaemonCall(
+        'sandbox init',
+        () => initSandboxRepo(ready, repo, prompt),
+      )
     })()
     return c.json({ sandbox: serializeSandbox(record) }, 201)
   } catch (error) {
