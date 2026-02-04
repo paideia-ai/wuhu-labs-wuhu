@@ -17,6 +17,7 @@ import {
 } from './src/sandbox-service.ts'
 import { fetchSandboxMessages, persistSandboxState } from './src/state.ts'
 import { RawLogsS3Store } from './src/raw-logs-s3.ts'
+import { registerSessionRoutes } from './src/sessions-routes.ts'
 
 const app = new Hono()
 const config = loadConfig()
@@ -114,6 +115,8 @@ app.use('*', async (c, next) => {
   if (proxied) return proxied
   await next()
 })
+
+registerSessionRoutes(app, db)
 
 function buildPreviewUrl(id: string, port: number): string {
   return `https://${id}-${port}.${config.sandbox.previewDomain}`
