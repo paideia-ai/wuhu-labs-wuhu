@@ -1,10 +1,15 @@
 import { createSandboxDaemonApp } from './src/server.ts'
 import { FakeAgentProvider } from './src/agent-provider.ts'
 import { PiAgentProvider } from './src/pi-agent-provider.ts'
-import { InMemoryCredentialsStore } from './src/credentials.ts'
+import {
+  applyCredentialsToEnv,
+  InMemoryCredentialsStore,
+} from './src/credentials.ts'
 import { LazyAgentProvider } from './src/lazy-agent-provider.ts'
 import { loadSandboxDaemonConfig } from './src/config.ts'
 import { readEnvTrimmed } from './src/env.ts'
+import { serveDir } from '@std/http/file-server'
+import { join } from '@std/path'
 
 function fileExists(path: string): boolean {
   try {
@@ -61,6 +66,8 @@ const config = loadSandboxDaemonConfig()
 const hostname = config.host
 const port = config.port
 const agentMode = config.agentMode
+const previewRoot = Deno.env.get('SANDBOX_DAEMON_PREVIEW_ROOT') ??
+  (config.workspaceRoot ? join(config.workspaceRoot, 'repo') : '/root/repo')
 
 const credentials = new InMemoryCredentialsStore()
 
@@ -127,6 +134,7 @@ const shutdown = async () => {
 const { app } = createSandboxDaemonApp({
   provider,
   onCredentials: async (payload) => {
+    applyCredentialsToEnv(payload)
     credentials.set(payload)
     await provider.start()
   },
@@ -148,11 +156,22 @@ try {
 servers.preview = Deno.serve({
   hostname: '0.0.0.0',
   port: previewPort,
-}, () => {
-  return new Response(
-    `<html><body style="font-family:system-ui;padding:2rem"><h1>Wuhu Sandbox Preview</h1><p>Sandbox daemon is running.</p></body></html>`,
-    { headers: { 'content-type': 'text/html; charset=utf-8' } },
-  )
+}, async (request) => {
+  try {
+    const stat = await Deno.stat(previewRoot)
+    if (!stat.isDirectory) {
+      throw new Error('preview_root_not_directory')
+    }
+    return await serveDir(request, {
+      fsRoot: previewRoot,
+      showDirListing: true,
+    })
+  } catch {
+    return new Response(
+      `<html><body style="font-family:system-ui;padding:2rem"><h1>Wuhu Sandbox Preview</h1><p>Repo not ready at ${previewRoot}.</p></body></html>`,
+      { headers: { 'content-type': 'text/html; charset=utf-8' } },
+    )
+  }
 })
 
 servers.main = Deno.serve({ hostname, port }, app.fetch)
@@ -168,6 +187,7 @@ console.log(
   `sandbox-daemon listening on http://${hostname}:${port} (agent=${agentMode})`,
 )
 console.log(`preview server listening on http://0.0.0.0:${previewPort}`)
+console.log(`preview root: ${previewRoot}`)
 console.log(
   `credentials loaded from env: OPENAI_API_KEY=${
     Boolean(envOpenAiKey)

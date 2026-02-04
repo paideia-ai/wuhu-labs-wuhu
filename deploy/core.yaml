@@ -45,6 +45,8 @@ spec:
                   key: token
             - name: GITHUB_ALLOWED_ORGS
               value: "paideia-ai,wuhu-labs"
+            - name: REDIS_URL
+              value: "redis://redis:6379"
           livenessProbe:
             httpGet:
               path: /health

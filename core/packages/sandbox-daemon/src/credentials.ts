@@ -43,6 +43,16 @@ export function credentialsToEnv(
   return env
 }
 
+export function applyCredentialsToEnv(
+  payload: SandboxDaemonCredentialsPayload,
+): Record<string, string> {
+  const env = credentialsToEnv(payload)
+  for (const [key, value] of Object.entries(env)) {
+    Deno.env.set(key, value)
+  }
+  return env
+}
+
 export class InMemoryCredentialsStore {
   #payload?: SandboxDaemonCredentialsPayload
   #env: Record<string, string> = {}
