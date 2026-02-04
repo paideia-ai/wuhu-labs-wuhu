@@ -65,15 +65,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (actionType === 'create') {
     const name = String(formData.get('name') ?? '').trim()
     const repo = String(formData.get('repo') ?? '').trim()
-    const prompt = String(formData.get('prompt') ?? '').trim() ||
-      'Tell me what this repo is about'
     if (!repo) {
       throw new Response('Repo is required', { status: 400 })
     }
     const response = await fetch(`${apiUrl}/sandboxes`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: name || null, repo, prompt }),
+      body: JSON.stringify({ name: name || null, repo }),
     })
     const payload = await response.json()
     if (!response.ok) {
@@ -146,16 +144,6 @@ export default function Index() {
           >
             Create
           </button>
-          <textarea
-            name='prompt'
-            defaultValue='Tell me what this repo is about'
-            placeholder='Describe the coding task you want the agent to do...'
-            style={{
-              gridColumn: '1 / -1',
-              minHeight: '110px',
-              padding: '0.5rem',
-            }}
-          />
         </Form>
       </section>
 

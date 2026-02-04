@@ -133,83 +133,58 @@ async function waitForSandboxReady(
 async function postDaemonCredentials(
   record: { podIp: string | null; daemonPort: number },
   token: string | undefined,
-  llm: { openaiApiKey?: string; anthropicApiKey?: string },
 ): Promise<void> {
-  if (!record.podIp) return
-  const hasLlm = Boolean(llm.openaiApiKey || llm.anthropicApiKey)
-  if (!token && !hasLlm) return
-  const response = await fetch(
-    `http://${record.podIp}:${record.daemonPort}/credentials`,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        version: 'core',
-        github: token ? { token } : undefined,
-        llm: hasLlm
-          ? {
-            openaiApiKey: llm.openaiApiKey,
-            anthropicApiKey: llm.anthropicApiKey,
-          }
-          : undefined,
-      }),
-    },
-  )
-  if (!response.ok) {
-    throw new Error(await response.text())
+  if (!record.podIp || !token) return
+  try {
+    const response = await fetch(
+      `http://${record.podIp}:${record.daemonPort}/credentials`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          version: 'core',
+          github: { token },
+        }),
+      },
+    )
+    if (!response.ok) {
+      console.warn('sandbox credentials failed', await response.text())
+    }
+  } catch (error) {
+    console.warn('sandbox credentials request failed', error)
   }
 }
 
 async function initSandboxRepo(
   record: { podIp: string | null; daemonPort: number },
   repoFullName: string,
-  prompt: string,
 ): Promise<void> {
   if (!record.podIp) return
-  const response = await fetch(
-    `http://${record.podIp}:${record.daemonPort}/init`,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        workspace: {
-          repos: [
-            {
-              id: repoFullName,
-              source: `github:${repoFullName}`,
-              path: 'repo',
-            },
-          ],
-        },
-        agent: {
-          initialPrompt: prompt,
-        },
-      }),
-    },
-  )
-  if (!response.ok) {
-    throw new Error(await response.text())
-  }
-}
-
-async function retryDaemonCall(
-  label: string,
-  fn: () => Promise<void>,
-  options?: { attempts?: number; delayMs?: number },
-): Promise<void> {
-  const attempts = options?.attempts ?? 20
-  const delayMs = options?.delayMs ?? 1000
-  let lastError: unknown
-  for (let i = 0; i < attempts; i++) {
-    try {
-      await fn()
-      return
-    } catch (error) {
-      lastError = error
-      await new Promise((resolve) => setTimeout(resolve, delayMs))
+  try {
+    const response = await fetch(
+      `http://${record.podIp}:${record.daemonPort}/init`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workspace: {
+            repos: [
+              {
+                id: repoFullName,
+                source: `github:${repoFullName}`,
+                path: 'repo',
+              },
+            ],
+          },
+        }),
+      },
+    )
+    if (!response.ok) {
+      console.warn('sandbox init failed', await response.text())
     }
+  } catch (error) {
+    console.warn('sandbox init request failed', error)
   }
-  console.warn(`${label} failed after ${attempts} attempts`, lastError)
 }
 
 app.get('/', (c) => {
@@ -254,7 +229,7 @@ app.get('/sandboxes', async (c) => {
 })
 
 app.post('/sandboxes', async (c) => {
-  let body: { name?: string; repo?: string; prompt?: string } = {}
+  let body: { name?: string; repo?: string } = {}
   try {
     body = await c.req.json()
   } catch {
@@ -275,8 +250,6 @@ app.post('/sandboxes', async (c) => {
     ) {
       return c.json({ error: 'repo_not_allowed' }, 400)
     }
-    const prompt = String(body.prompt ?? '').trim() ||
-      'Tell me what this repo is about'
     const kubeClient = await kubeClientPromise
     const { record } = await createSandbox(kubeClient, config.sandbox, {
       name: body.name ?? null,
@@ -288,14 +261,8 @@ app.post('/sandboxes', async (c) => {
         console.warn('sandbox pod did not become ready in time', record.id)
         return
       }
-      await retryDaemonCall(
-        'sandbox credentials',
-        () => postDaemonCredentials(ready, config.github.token, config.llm),
-      )
-      await retryDaemonCall(
-        'sandbox init',
-        () => initSandboxRepo(ready, repo, prompt),
-      )
+      await postDaemonCredentials(ready, config.github.token)
+      await initSandboxRepo(ready, repo)
     })()
     return c.json({ sandbox: serializeSandbox(record) }, 201)
   } catch (error) {

@@ -10,12 +10,6 @@ export interface AgentProvider {
   sendPrompt(request: SandboxDaemonPromptRequest): Promise<void>
   abort(request?: SandboxDaemonAbortRequest): Promise<void>
   onEvent(handler: (event: SandboxDaemonAgentEvent) => void): () => void
-  getState?(): Promise<AgentProviderState | null>
-}
-
-export interface AgentProviderState {
-  sessionFile?: string | null
-  sessionId?: string | null
 }
 
 export class FakeAgentProvider implements AgentProvider {

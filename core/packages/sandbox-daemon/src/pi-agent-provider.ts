@@ -36,7 +36,7 @@ export class ProcessPiTransport implements PiTransport {
 
   constructor(
     command = 'pi',
-    args: string[] = ['--mode', 'rpc'],
+    args: string[] = ['--mode', 'rpc', '--no-session'],
     options: Omit<ProcessPiTransportOptions, 'command' | 'args'> = {},
   ) {
     this.#command = command
@@ -132,16 +132,6 @@ export interface PiAgentProviderOptions {
 export class PiAgentProvider implements AgentProvider {
   #transport: PiTransport
   #handlers = new Set<(event: SandboxDaemonAgentEvent) => void>()
-  #pending = new Map<
-    string,
-    {
-      resolve: (value: unknown) => void
-      reject: (reason?: unknown) => void
-      timeoutId: number
-    }
-  >()
-  #requestCounter = 0
-  #responseTimeoutMs = 5000
 
   constructor(options: PiAgentProviderOptions = {}) {
     const transport = options.transport ??
@@ -163,11 +153,6 @@ export class PiAgentProvider implements AgentProvider {
   async stop(): Promise<void> {
     await this.#transport.stop()
     this.#handlers.clear()
-    for (const pending of this.#pending.values()) {
-      clearTimeout(pending.timeoutId)
-      pending.reject(new Error('Pi transport stopped'))
-    }
-    this.#pending.clear()
   }
 
   async sendPrompt(request: SandboxDaemonPromptRequest): Promise<void> {
@@ -189,24 +174,6 @@ export class PiAgentProvider implements AgentProvider {
     await this.#transport.send(JSON.stringify(cmd))
   }
 
-  async getState(): Promise<{ sessionFile?: string | null } | null> {
-    const response = await this.#sendCommand({ type: 'get_state' })
-    if (!response || typeof response !== 'object') return null
-    const responseObj = response as {
-      type?: string
-      success?: boolean
-      data?: unknown
-    }
-    if (responseObj.type !== 'response' || responseObj.success !== true) {
-      return null
-    }
-    const data = responseObj.data as { sessionFile?: unknown } | undefined
-    const sessionFile = data && typeof data.sessionFile === 'string'
-      ? data.sessionFile
-      : null
-    return { sessionFile }
-  }
-
   onEvent(handler: (event: SandboxDaemonAgentEvent) => void): () => void {
     this.#handlers.add(handler)
     return () => {
@@ -224,13 +191,6 @@ export class PiAgentProvider implements AgentProvider {
       return
     }
     if (parsed.type === 'response') {
-      const id = typeof parsed.id === 'string' ? parsed.id : undefined
-      if (id && this.#pending.has(id)) {
-        const pending = this.#pending.get(id)!
-        clearTimeout(pending.timeoutId)
-        this.#pending.delete(id)
-        pending.resolve(parsed)
-      }
       // Ignore command responses for Protocol 0.
       return
     }
@@ -246,19 +206,5 @@ export class PiAgentProvider implements AgentProvider {
     for (const handler of this.#handlers) {
       handler(event)
     }
-  }
-
-  async #sendCommand(command: Record<string, unknown>): Promise<unknown> {
-    const id = `req-${Date.now()}-${this.#requestCounter++}`
-    const payload = { id, ...command }
-    const response = new Promise<unknown>((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        this.#pending.delete(id)
-        reject(new Error('Pi command timed out'))
-      }, this.#responseTimeoutMs)
-      this.#pending.set(id, { resolve, reject, timeoutId })
-    })
-    await this.#transport.send(JSON.stringify(payload))
-    return await response
   }
 }
