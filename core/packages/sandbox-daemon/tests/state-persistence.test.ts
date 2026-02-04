@@ -34,16 +34,23 @@ Deno.test('daemon persists UI messages to Core after turn_end', async () => {
   const tmp = await Deno.makeTempDir()
   const cursorPath = `${tmp}/cursor.json`
 
-  const calls: Array<{ url: string; body: unknown }> = []
+  const calls: Array<{
+    url: string
+    contentType: string | null
+    bodyText: string | null
+  }> = []
   const fetchFn: typeof fetch = async (input, init) => {
     const url = typeof input === 'string'
       ? input
       : input instanceof URL
       ? input.toString()
       : input.url
+    const headers = new Headers(
+      (init as unknown as { headers?: HeadersInit } | undefined)?.headers,
+    )
     const initAny = init as unknown as { body?: unknown } | undefined
-    const body = initAny?.body ? JSON.parse(String(initAny.body)) : null
-    calls.push({ url, body })
+    const bodyText = initAny?.body ? String(initAny.body) : null
+    calls.push({ url, contentType: headers.get('content-type'), bodyText })
     return new Response(JSON.stringify({ ok: true }), { status: 200 })
   }
 
@@ -107,10 +114,10 @@ Deno.test('daemon persists UI messages to Core after turn_end', async () => {
   )
   provider.emit(agentEvent({ type: 'turn_end' }))
 
-  await waitFor(() => calls.length >= 1)
+  await waitFor(() => calls.length >= 2)
 
   assertEquals(calls[0].url, 'http://core.local/sandboxes/sb_test/state')
-  const body = calls[0].body as {
+  const body = JSON.parse(calls[0].bodyText ?? 'null') as {
     cursor: number
     messages: Array<{
       cursor: number
@@ -138,6 +145,20 @@ Deno.test('daemon persists UI messages to Core after turn_end', async () => {
   assertEquals(body.messages[2].toolCallId, 'call_1')
   assertEquals(body.messages[0].turnIndex, 1)
   assertEquals(body.messages[2].turnIndex, 1)
+
+  assertEquals(
+    calls[1].url,
+    'http://core.local/sandboxes/sb_test/logs?turnIndex=1',
+  )
+  assertEquals(calls[1].contentType, 'application/x-ndjson')
+  const ndjson1 = (calls[1].bodyText ?? '').trimEnd()
+  const lines1 = ndjson1.split('\n').map((line) =>
+    JSON.parse(line) as {
+      type: string
+    }
+  )
+  assertEquals(lines1[0]?.type, 'turn_start')
+  assertEquals(lines1.at(-1)?.type, 'turn_end')
 
   const persisted = JSON.parse(await Deno.readTextFile(cursorPath)) as {
     cursor: number
@@ -167,13 +188,18 @@ Deno.test('daemon persists UI messages to Core after turn_end', async () => {
   )
   provider.emit(agentEvent({ type: 'turn_end' }))
 
-  await waitFor(() => calls.length >= 2)
-  const body2 = calls[1].body as {
+  await waitFor(() => calls.length >= 4)
+  const body2 = JSON.parse(calls[2].bodyText ?? 'null') as {
     cursor: number
     messages: Array<{ cursor: number }>
   }
   assertEquals(body2.cursor, 5)
   assertEquals(body2.messages.map((m) => m.cursor), [4, 5])
+
+  assertEquals(
+    calls[3].url,
+    'http://core.local/sandboxes/sb_test/logs?turnIndex=2',
+  )
 })
 
 Deno.test('state persistence retries POST failures (best-effort)', async () => {
@@ -229,6 +255,6 @@ Deno.test('state persistence retries POST failures (best-effort)', async () => {
   )
   provider.emit(agentEvent({ type: 'turn_end' }))
 
-  await waitFor(() => attempt >= 3)
-  assertEquals(attemptsSeen, [1, 2, 3])
+  await waitFor(() => attempt >= 4)
+  assertEquals(attemptsSeen.slice(0, 3), [1, 2, 3])
 })

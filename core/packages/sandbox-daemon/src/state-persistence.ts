@@ -260,3 +260,54 @@ export async function postJsonWithRetry(
   }
   throw lastError instanceof Error ? lastError : new Error('state_post_failed')
 }
+
+export function agentEventsToNdjson(
+  events: SandboxDaemonAgentEvent[],
+): string {
+  const lines: string[] = []
+  for (const event of events) {
+    const payloadRaw = event.payload as unknown
+    const payload = isRecord(payloadRaw) ? payloadRaw : {}
+    const type = typeof payload.type === 'string' ? payload.type : event.type
+    const timestamp = typeof payload.timestamp === 'number'
+      ? payload.timestamp
+      : event.timestamp
+    lines.push(JSON.stringify({ ...payload, type, timestamp }))
+  }
+  return lines.length ? `${lines.join('\n')}\n` : ''
+}
+
+export async function postNdjsonWithRetry(
+  url: string,
+  ndjsonBody: string,
+  options: PostWithRetryOptions = {},
+): Promise<void> {
+  const attempts = Math.max(1, Math.floor(options.attempts ?? 3))
+  const baseDelayMs = Math.max(0, Math.floor(options.baseDelayMs ?? 250))
+  const fetchFn = options.fetchFn ?? fetch
+  const sleep = options.sleep ??
+    ((ms: number) => new Promise((r) => setTimeout(r, ms)))
+
+  let lastError: unknown
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const res = await fetchFn(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-ndjson' },
+        body: ndjsonBody,
+      })
+      if (res.ok) return
+      const text = await res.text().catch(() => '')
+      lastError = new Error(`http_${res.status}: ${text}`)
+    } catch (err) {
+      lastError = err
+    }
+
+    if (attempt < attempts && baseDelayMs > 0) {
+      const delay = baseDelayMs * 2 ** (attempt - 1)
+      await sleep(delay)
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('ndjson_post_failed')
+}
