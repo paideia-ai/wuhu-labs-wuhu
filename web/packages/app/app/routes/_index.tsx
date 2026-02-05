@@ -1,5 +1,23 @@
 import { Form, Link, redirect, useLoaderData } from 'react-router'
 import type { Route } from './+types/_index.ts'
+import { Button } from '@wuhu/shadcn/components/button'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@wuhu/shadcn/components/card'
+import { Input } from '@wuhu/shadcn/components/input'
+import { Textarea } from '@wuhu/shadcn/components/textarea'
+import { Label } from '@wuhu/shadcn/components/label'
+import { Badge } from '@wuhu/shadcn/components/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@wuhu/shadcn/components/select'
 
 interface SandboxSummary {
   id: string
@@ -112,111 +130,124 @@ export default function Index() {
   const { sandboxes, repos, error, repoError } = useLoaderData<typeof loader>()
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
-      <h1>Wuhu Sandboxes</h1>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+    <div className='container mx-auto p-8 max-w-4xl'>
+      <h1 className='text-3xl font-bold mb-6'>Wuhu Sandboxes</h1>
+      {error && <p className='text-destructive mb-4'>{error}</p>}
 
-      <section style={{ marginBottom: '2rem' }}>
-        <h2>Create Task</h2>
-        {repoError && <p style={{ color: 'red' }}>{repoError}</p>}
-        <Form
-          method='post'
-          style={{
-            display: 'grid',
-            gap: '0.5rem',
-            gridTemplateColumns: '2fr 1fr',
-          }}
-        >
-          <textarea
-            name='prompt'
-            placeholder='Prompt (optional) — what should the agent do?'
-            rows={3}
-            style={{ padding: '0.5rem', gridColumn: '1 / -1' }}
-          />
-          <input
-            type='text'
-            name='name'
-            placeholder='Sandbox name (optional)'
-            style={{ flex: 1, padding: '0.5rem' }}
-          />
-          <select name='repo' style={{ padding: '0.5rem' }}>
-            <option value=''>Select repo</option>
-            {repos.map((repo) => (
-              <option key={repo.id} value={repo.fullName}>
-                {repo.fullName}
-                {repo.private ? ' (private)' : ''}
-              </option>
-            ))}
-          </select>
-          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '0.5rem' }}>
-            <button
-              type='submit'
-              name='_action'
-              value='create'
-              disabled={repos.length === 0}
-            >
-              Create
-            </button>
-          </div>
-        </Form>
-      </section>
+      <Card className='mb-8'>
+        <CardHeader>
+          <CardTitle>Create Task</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {repoError && <p className='text-destructive mb-4'>{repoError}</p>}
+          <Form method='post' className='grid gap-4'>
+            <div className='space-y-2'>
+              <Label htmlFor='prompt'>Prompt</Label>
+              <Textarea
+                id='prompt'
+                name='prompt'
+                placeholder='What should the agent do? (optional)'
+                rows={3}
+              />
+            </div>
+            <div className='grid grid-cols-2 gap-4'>
+              <div className='space-y-2'>
+                <Label htmlFor='name'>Sandbox Name</Label>
+                <Input
+                  id='name'
+                  name='name'
+                  placeholder='Optional name'
+                />
+              </div>
+              <div className='space-y-2'>
+                <Label htmlFor='repo'>Repository</Label>
+                <Select name='repo'>
+                  <SelectTrigger className='w-full'>
+                    <SelectValue placeholder='Select repo' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {repos.map((repo) => (
+                      <SelectItem key={repo.id} value={repo.fullName}>
+                        {repo.fullName}
+                        {repo.private ? ' (private)' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Button
+                type='submit'
+                name='_action'
+                value='create'
+                disabled={repos.length === 0}
+              >
+                Create Sandbox
+              </Button>
+            </div>
+          </Form>
+        </CardContent>
+      </Card>
 
       <section>
-        <h2>Active Sandboxes</h2>
+        <h2 className='text-2xl font-semibold mb-4'>Active Sandboxes</h2>
         {sandboxes.length === 0
-          ? <p>No sandboxes yet.</p>
+          ? <p className='text-muted-foreground'>No sandboxes yet.</p>
           : (
-            <div style={{ display: 'grid', gap: '1rem' }}>
+            <div className='grid gap-4'>
               {sandboxes.map((sandbox) => (
-                <div
-                  key={sandbox.id}
-                  style={{
-                    border: '1px solid #ddd',
-                    borderRadius: '8px',
-                    padding: '1rem',
-                  }}
-                >
-                  <div
-                    style={{ display: 'flex', justifyContent: 'space-between' }}
-                  >
-                    <div>
-                      <h3 style={{ margin: 0 }}>
-                        {sandbox.name || sandbox.id}
-                      </h3>
-                      <p style={{ margin: '0.25rem 0' }}>
-                        Status: <strong>{sandbox.status}</strong>
-                      </p>
-                      <p style={{ margin: '0.25rem 0' }}>
-                        Repo: <strong>{sandbox.repoFullName ?? 'None'}</strong>
-                      </p>
-                      <p style={{ margin: '0.25rem 0' }}>
-                        Preview:{' '}
-                        <a
-                          href={sandbox.previewUrl}
-                          target='_blank'
-                          rel='noreferrer'
-                        >
-                          {sandbox.previewUrl}
-                        </a>
-                      </p>
+                <Card key={sandbox.id}>
+                  <CardContent className='pt-6'>
+                    <div className='flex justify-between items-start'>
+                      <div className='space-y-1'>
+                        <h3 className='font-semibold text-lg'>
+                          {sandbox.name || sandbox.id}
+                        </h3>
+                        <div className='flex items-center gap-2'>
+                          <span className='text-sm text-muted-foreground'>
+                            Status:
+                          </span>
+                          <Badge variant='outline'>{sandbox.status}</Badge>
+                        </div>
+                        <p className='text-sm text-muted-foreground'>
+                          Repo:{' '}
+                          <span className='font-medium text-foreground'>
+                            {sandbox.repoFullName ?? 'None'}
+                          </span>
+                        </p>
+                        <p className='text-sm text-muted-foreground'>
+                          Preview:{' '}
+                          <a
+                            href={sandbox.previewUrl}
+                            target='_blank'
+                            rel='noreferrer'
+                            className='text-primary hover:underline'
+                          >
+                            {sandbox.previewUrl}
+                          </a>
+                        </p>
+                      </div>
+                      <div className='flex gap-2'>
+                        <Button variant='outline' size='sm' asChild>
+                          <Link to={`/sandboxes/${sandbox.id}`}>Details</Link>
+                        </Button>
+                        <Form method='post'>
+                          <input type='hidden' name='id' value={sandbox.id} />
+                          <Button
+                            type='submit'
+                            name='_action'
+                            value='kill'
+                            variant='destructive'
+                            size='sm'
+                          >
+                            Kill
+                          </Button>
+                        </Form>
+                      </div>
                     </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        gap: '0.5rem',
-                        height: 'fit-content',
-                      }}
-                    >
-                      <Link to={`/sandboxes/${sandbox.id}`}>Details</Link>
-                      <Form method='post'>
-                        <input type='hidden' name='id' value={sandbox.id} />
-                        <button type='submit' name='_action' value='kill'>
-                          Kill
-                        </button>
-                      </Form>
-                    </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           )}

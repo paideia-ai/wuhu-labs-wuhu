@@ -13,6 +13,15 @@ import {
   type PersistedSandboxMessage,
 } from '~/lib/sandbox/history.ts'
 import { initialCodingUiState } from '~/lib/sandbox/types.ts'
+import { Button } from '@wuhu/shadcn/components/button'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@wuhu/shadcn/components/card'
+import { Badge } from '@wuhu/shadcn/components/badge'
+import { Textarea } from '@wuhu/shadcn/components/textarea'
 
 function formatTimestamp(value?: number): string {
   const date = value ? new Date(value) : new Date()
@@ -118,15 +127,15 @@ export default function SandboxDetail() {
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
 
-  const statusColor = useMemo(() => {
+  const statusVariant = useMemo(() => {
     if (
       control.statusLabel === 'Ready' || control.statusLabel === 'Initialized'
     ) {
-      return '#0ea5e9'
+      return 'default'
     }
-    if (control.statusLabel.includes('error')) return '#ef4444'
-    if (control.statusLabel === 'Terminated') return '#6b7280'
-    return '#a855f7'
+    if (control.statusLabel.includes('error')) return 'destructive'
+    if (control.statusLabel === 'Terminated') return 'secondary'
+    return 'outline'
   }, [control.statusLabel])
 
   const handleSend = async () => {
@@ -163,9 +172,6 @@ export default function SandboxDetail() {
   const displayMessages = useMemo(() => {
     const controlMessages: UiMessage[] = control.prompts
       .filter((p) => {
-        // The daemon emits `prompt_queued` (control stream) and the agent later
-        // replays the same user message in the coding stream. Hide the queued
-        // prompt once we see a matching user message at/after that cursor.
         return !queuedPromptIsRecordedInCoding(p, coding.messages)
       })
       .map((p) => ({
@@ -202,240 +208,169 @@ export default function SandboxDetail() {
   }
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
-      <Link to='/'>← Back</Link>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: '1rem',
-        }}
-      >
-        <h1 style={{ marginBottom: '0.5rem' }}>{sandbox.name || sandbox.id}</h1>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <span
-            style={{
-              fontSize: '0.875rem',
-              padding: '0.25rem 0.5rem',
-              borderRadius: '999px',
-              border: `1px solid ${statusColor}`,
-              color: statusColor,
-              background: 'rgba(2, 132, 199, 0.08)',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {control.statusLabel}
-          </span>
-          <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>
+    <div className='container mx-auto p-8 max-w-4xl'>
+      <Button variant='ghost' size='sm' asChild className='mb-4'>
+        <Link to='/'>← Back</Link>
+      </Button>
+
+      <div className='flex items-baseline justify-between gap-4 mb-6'>
+        <h1 className='text-3xl font-bold'>{sandbox.name || sandbox.id}</h1>
+        <div className='flex gap-2 items-center'>
+          <Badge variant={statusVariant}>{control.statusLabel}</Badge>
+          <span className='text-sm text-muted-foreground'>
             {connectionStatus}
           </span>
         </div>
       </div>
 
-      <p style={{ marginTop: 0 }}>
-        Pod status: <strong>{sandbox.status}</strong>
-      </p>
-      <p>
-        Repo: <strong>{sandbox.repoFullName ?? 'None'}</strong>
-      </p>
-      <p>
-        Preview:{' '}
-        <a href={sandbox.previewUrl} target='_blank' rel='noreferrer'>
-          {sandbox.previewUrl}
-        </a>
-      </p>
-      <p>Namespace: {sandbox.namespace}</p>
-      <p>Job: {sandbox.jobName}</p>
-      <p>Pod: {sandbox.podName ?? 'Pending'}</p>
-      <p>Pod IP: {sandbox.podIp ?? 'Pending'}</p>
-
-      {control.error
-        ? (
-          <div style={{ color: '#ef4444', margin: '0.5rem 0' }}>
-            {control.error}
-          </div>
-        )
-        : null}
-
-      <section style={{ marginTop: '1.5rem' }}>
-        <h2 style={{ marginBottom: '0.5rem' }}>Agent Chat</h2>
-        <div
-          style={{
-            border: '1px solid #e5e7eb',
-            borderRadius: 8,
-            padding: '1rem',
-            background: '#fff',
-          }}
-        >
-          <div
-            style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}
-          >
-            <button type='button' onClick={handleAbort} disabled={aborting}>
-              Abort
-            </button>
-            <Form method='post'>
-              <button type='submit' name='_action' value='kill'>
-                Kill Sandbox
-              </button>
-            </Form>
-            <div
-              style={{
-                marginLeft: 'auto',
-                color: '#6b7280',
-                fontSize: '0.875rem',
-              }}
+      <Card className='mb-6'>
+        <CardContent className='pt-6 space-y-2'>
+          <p className='text-sm'>
+            <span className='text-muted-foreground'>Pod status:</span>{' '}
+            <span className='font-medium'>{sandbox.status}</span>
+          </p>
+          <p className='text-sm'>
+            <span className='text-muted-foreground'>Repo:</span>{' '}
+            <span className='font-medium'>
+              {sandbox.repoFullName ?? 'None'}
+            </span>
+          </p>
+          <p className='text-sm'>
+            <span className='text-muted-foreground'>Preview:</span>{' '}
+            <a
+              href={sandbox.previewUrl}
+              target='_blank'
+              rel='noreferrer'
+              className='text-primary hover:underline'
             >
+              {sandbox.previewUrl}
+            </a>
+          </p>
+          <p className='text-sm text-muted-foreground'>
+            Namespace: {sandbox.namespace} · Job: {sandbox.jobName}
+          </p>
+          <p className='text-sm text-muted-foreground'>
+            Pod: {sandbox.podName ?? 'Pending'} · IP:{' '}
+            {sandbox.podIp ?? 'Pending'}
+          </p>
+        </CardContent>
+      </Card>
+
+      {control.error && <p className='text-destructive mb-4'>{control.error}
+      </p>}
+
+      <Card>
+        <CardHeader>
+          <div className='flex items-center justify-between'>
+            <CardTitle>Agent Chat</CardTitle>
+            <span className='text-sm text-muted-foreground'>
               Agent: {coding.agentStatus} · Cursor: {coding.cursor}
-            </div>
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className='flex gap-2 mb-4'>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={handleAbort}
+              disabled={aborting}
+            >
+              Abort
+            </Button>
+            <Form method='post'>
+              <Button
+                type='submit'
+                name='_action'
+                value='kill'
+                variant='destructive'
+                size='sm'
+              >
+                Kill Sandbox
+              </Button>
+            </Form>
           </div>
 
-          <div
-            style={{
-              border: '1px solid #f3f4f6',
-              borderRadius: 8,
-              padding: '0.75rem',
-              height: 360,
-              overflow: 'auto',
-              background: '#fafafa',
-            }}
-          >
+          <div className='border rounded-lg p-3 h-[360px] overflow-auto bg-muted/30 mb-4'>
             {displayMessages.length === 0
-              ? <div style={{ color: '#6b7280' }}>Waiting for messages…</div>
+              ? (
+                <div className='text-muted-foreground'>
+                  Waiting for messages…
+                </div>
+              )
               : (
-                <div style={{ display: 'grid', gap: '0.75rem' }}>
+                <div className='space-y-3'>
                   {displayMessages.map((message) => (
-                    <div
-                      key={message.id}
-                      style={{
-                        border: '1px solid #e5e7eb',
-                        borderRadius: 8,
-                        padding: '0.75rem',
-                        background: '#fff',
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          gap: '0.5rem',
-                          justifyContent: 'space-between',
-                          color: '#6b7280',
-                          fontSize: '0.875rem',
-                          marginBottom: '0.25rem',
-                        }}
-                      >
-                        <span>
-                          {message.title || message.role}
-                          {message.status === 'streaming' ? ' (typing)' : ''}
-                        </span>
-                        <span>{message.timestamp ?? ''}</span>
-                      </div>
-                      <pre
-                        style={{
-                          margin: 0,
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-word',
-                          fontFamily:
-                            'ui-monospace, SFMono-Regular, Menlo, monospace',
-                          fontSize: '0.95rem',
-                        }}
-                      >
+                    <Card key={message.id} className='bg-background'>
+                      <CardContent className='p-3'>
+                        <div className='flex justify-between text-sm text-muted-foreground mb-1'>
+                          <span>
+                            {message.title || message.role}
+                            {message.status === 'streaming' ? ' (typing)' : ''}
+                          </span>
+                          <span>{message.timestamp ?? ''}</span>
+                        </div>
+                        <pre className='whitespace-pre-wrap break-words font-mono text-sm'>
                         {message.text || (message.status === 'streaming' ? '...' : '')}
-                      </pre>
-                      {message.toolCalls?.length
-                        ? (
-                          <div
-                            style={{
-                              display: 'flex',
-                              flexWrap: 'wrap',
-                              gap: '0.25rem',
-                              marginTop: '0.5rem',
-                            }}
-                          >
-                            {message.toolCalls.map((tool) => (
-                              <span
-                                key={tool.id || tool.name}
-                                style={{
-                                  border: '1px solid #e5e7eb',
-                                  borderRadius: 999,
-                                  padding: '0.125rem 0.5rem',
-                                  fontSize: '0.75rem',
-                                  color: '#374151',
-                                  background: '#f9fafb',
-                                }}
-                              >
-                                {tool.name}
-                              </span>
-                            ))}
-                          </div>
-                        )
-                        : null}
-                      {message.thinking
-                        ? (
-                          <details style={{ marginTop: '0.5rem' }}>
-                            <summary style={{ cursor: 'pointer' }}>
-                              Reasoning
-                            </summary>
-                            <pre
-                              style={{
-                                margin: '0.5rem 0 0',
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word',
-                                fontFamily:
-                                  'ui-monospace, SFMono-Regular, Menlo, monospace',
-                                fontSize: '0.85rem',
-                                color: '#6b7280',
-                              }}
-                            >
-                              {message.thinking}
-                            </pre>
-                          </details>
-                        )
-                        : null}
-                    </div>
+                        </pre>
+                        {message.toolCalls?.length
+                          ? (
+                            <div className='flex flex-wrap gap-1 mt-2'>
+                              {message.toolCalls.map((tool) => (
+                                <Badge
+                                  key={tool.id || tool.name}
+                                  variant='secondary'
+                                  className='text-xs'
+                                >
+                                  {tool.name}
+                                </Badge>
+                              ))}
+                            </div>
+                          )
+                          : null}
+                        {message.thinking
+                          ? (
+                            <details className='mt-2'>
+                              <summary className='cursor-pointer text-sm text-muted-foreground'>
+                                Reasoning
+                              </summary>
+                              <pre className='mt-2 whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground'>
+                            {message.thinking}
+                              </pre>
+                            </details>
+                          )
+                          : null}
+                      </CardContent>
+                    </Card>
                   ))}
                 </div>
               )}
           </div>
 
-          <div style={{ marginTop: '0.75rem' }}>
-            <textarea
+          <div className='space-y-2'>
+            <Textarea
               rows={3}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder='Send a follow-up prompt…'
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                borderRadius: 8,
-                border: '1px solid #e5e7eb',
-              }}
             />
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginTop: '0.5rem',
-              }}
-            >
-              <div style={{ color: '#6b7280', fontSize: '0.875rem' }}>
+            <div className='flex justify-between items-center'>
+              <span className='text-sm text-muted-foreground'>
                 Shift+Enter for a new line.
-              </div>
-              <button
-                type='button'
+              </span>
+              <Button
                 onClick={handleSend}
                 disabled={!prompt.trim() || sending}
               >
                 Send
-              </button>
+              </Button>
             </div>
-            {sendError
-              ? <div style={{ color: '#ef4444' }}>{sendError}</div>
-              : null}
+            {sendError && (
+              <p className='text-destructive text-sm'>{sendError}</p>
+            )}
           </div>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
     </div>
   )
 }
