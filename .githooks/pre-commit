@@ -2,13 +2,34 @@
 set -e
 
 # Capture staged files before formatting
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
+mapfile -t STAGED_FILES < <(git diff --cached --name-only --diff-filter=ACMR)
 
-deno fmt core
-deno fmt web
+# If the user accidentally staged ignored files (e.g. Vite cache outputs),
+# unstage them so the commit doesn't include build artifacts.
+IGNORED_FILES=()
+for file in "${STAGED_FILES[@]}"; do
+  if git check-ignore --no-index -q -- "$file"; then
+    IGNORED_FILES+=("$file")
+  fi
+done
 
-# Re-stage only what was previously staged
-if [ -n "$STAGED_FILES" ]; then
-  git add $STAGED_FILES
+if [ ${#IGNORED_FILES[@]} -gt 0 ]; then
+  git restore --staged -- "${IGNORED_FILES[@]}"
 fi
 
+(cd core && deno fmt)
+(cd web && deno fmt)
+
+# Re-stage only what was previously staged
+if [ ${#STAGED_FILES[@]} -gt 0 ]; then
+  RESTAGE_FILES=()
+  for file in "${STAGED_FILES[@]}"; do
+    if ! git check-ignore --no-index -q -- "$file"; then
+      RESTAGE_FILES+=("$file")
+    fi
+  done
+
+  if [ ${#RESTAGE_FILES[@]} -gt 0 ]; then
+    git add -- "${RESTAGE_FILES[@]}"
+  fi
+fi

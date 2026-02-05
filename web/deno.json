@@ -9,7 +9,14 @@
   "fmt": {
     "indentWidth": 2,
     "semiColons": false,
-    "singleQuote": true
+    "singleQuote": true,
+    "exclude": [
+      "**/.vite",
+      "**/.react-router",
+      "**/build",
+      "**/dist",
+      "node_modules"
+    ]
   },
   "lint": {
     "rules": {
