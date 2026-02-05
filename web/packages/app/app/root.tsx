@@ -1,4 +1,5 @@
 import { Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router'
+import '@wuhu/shadcn/globals.css'
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
