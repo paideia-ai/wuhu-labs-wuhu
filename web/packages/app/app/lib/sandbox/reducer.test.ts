@@ -317,3 +317,67 @@ Deno.test('reduceCodingEnvelope keeps turn running when turn_end has pending too
       .length >= 1,
   )
 })
+
+Deno.test('reduceCodingEnvelope does not duplicate final assistant when turn_end repeats message_end content', () => {
+  const state1 = reduceCodingEnvelope(initialCodingUiState, {
+    cursor: 1,
+    event: {
+      source: 'agent',
+      type: 'turn_start',
+      payload: { type: 'turn_start', timestamp: 1_000 },
+    },
+  })
+  const state2 = reduceCodingEnvelope(state1, {
+    cursor: 2,
+    event: {
+      source: 'agent',
+      type: 'message_end',
+      payload: {
+        type: 'message_end',
+        message: { role: 'user', text: 'summarize repo', timestamp: 1_100 },
+      },
+    },
+  })
+  const state3 = reduceCodingEnvelope(state2, {
+    cursor: 3,
+    event: {
+      source: 'agent',
+      type: 'message_end',
+      payload: {
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          text: 'done',
+          timestamp: 1_200,
+          textSignature: 'sig-assistant-final',
+        },
+      },
+    },
+  })
+  const state4 = reduceCodingEnvelope(state3, {
+    cursor: 4,
+    event: {
+      source: 'agent',
+      type: 'turn_end',
+      payload: {
+        type: 'turn_end',
+        timestamp: 1_300,
+        message: {
+          role: 'assistant',
+          text: 'done',
+          timestamp: 1_200,
+        },
+      },
+    },
+  })
+
+  const matchingAssistantMessages = state4.messages.filter((message) =>
+    message.role === 'assistant' &&
+    message.turnIndex === 1 &&
+    message.text === 'done'
+  )
+
+  assertEquals(matchingAssistantMessages.length, 1)
+  assertEquals(matchingAssistantMessages[0]?.id, 'sig-assistant-final')
+  assertEquals(state4.turns[0]?.finalAssistantMessageId, 'sig-assistant-final')
+})

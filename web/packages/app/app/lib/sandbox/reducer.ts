@@ -427,6 +427,44 @@ function appendTraceMessageItem(
   return turns === state.turns ? state : { ...state, turns }
 }
 
+function toolCallsEqual(
+  left: Array<{ id: string; name: string }> = [],
+  right: Array<{ id: string; name: string }> = [],
+): boolean {
+  if (left.length !== right.length) return false
+  for (let i = 0; i < left.length; i++) {
+    const a = left[i]
+    const b = right[i]
+    if (!a || !b) return false
+    if (a.id !== b.id || a.name !== b.name) return false
+  }
+  return true
+}
+
+function findEquivalentCompletedMessage(
+  messages: UiMessage[],
+  target: {
+    role: UiMessage['role']
+    text: string
+    thinking?: string
+    toolCalls: Array<{ id: string; name: string }>
+    turnIndex?: number
+  },
+): UiMessage | null {
+  const normalizedThinking = target.thinking ?? ''
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const candidate = messages[i]
+    if (!candidate || candidate.status !== 'complete') continue
+    if (candidate.role !== target.role) continue
+    if (candidate.turnIndex !== target.turnIndex) continue
+    if ((candidate.text ?? '') !== target.text) continue
+    if ((candidate.thinking ?? '') !== normalizedThinking) continue
+    if (!toolCallsEqual(candidate.toolCalls ?? [], target.toolCalls)) continue
+    return candidate
+  }
+  return null
+}
+
 export function reduceCodingEnvelope(
   state: CodingUiState,
   envelope: StreamEnvelope<SandboxDaemonEvent>,
@@ -664,32 +702,45 @@ export function reduceCodingEnvelope(
       const toolName = typeof messageRecord.toolName === 'string'
         ? messageRecord.toolName
         : undefined
+      const mappedRole = role === 'toolResult' ? 'tool' : toAgentRole(role)
       const fallbackTurnIndex = next.activeTurnIndex ??
         (typeof next.nextTurnIndex === 'number'
           ? next.nextTurnIndex
           : undefined)
-      messages = upsertMessage(messages, {
-        id,
-        role: role === 'toolResult' ? 'tool' : toAgentRole(role),
-        title: role === 'user'
-          ? 'You'
-          : role === 'assistant'
-          ? 'Agent'
-          : role === 'toolResult'
-          ? toolName || 'Tool result'
-          : role,
+      const equivalent = findEquivalentCompletedMessage(messages, {
+        role: mappedRole,
         text,
         thinking,
         toolCalls,
-        status: 'complete',
-        cursor,
-        timestamp: formatTimestamp(timestamp),
-        timestampMs: timestamp,
         turnIndex: fallbackTurnIndex,
       })
-      completedMessageForTrace = messages.find((m) =>
-        m.id === id
-      ) ?? completedMessageForTrace
+
+      if (equivalent) {
+        completedMessageForTrace = equivalent
+      } else {
+        messages = upsertMessage(messages, {
+          id,
+          role: mappedRole,
+          title: role === 'user'
+            ? 'You'
+            : role === 'assistant'
+            ? 'Agent'
+            : role === 'toolResult'
+            ? toolName || 'Tool result'
+            : role,
+          text,
+          thinking,
+          toolCalls,
+          status: 'complete',
+          cursor,
+          timestamp: formatTimestamp(timestamp),
+          timestampMs: timestamp,
+          turnIndex: fallbackTurnIndex,
+        })
+        completedMessageForTrace = messages.find((m) =>
+          m.id === id
+        ) ?? completedMessageForTrace
+      }
     }
   }
 
