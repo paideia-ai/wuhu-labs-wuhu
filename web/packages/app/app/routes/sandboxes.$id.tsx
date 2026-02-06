@@ -37,6 +37,16 @@ function queueModeLabel(mode: 'steer' | 'followUp'): string {
   return mode === 'steer' ? 'Steer' : 'Follow-up'
 }
 
+function traceMessageText(item: {
+  role: UiMessage['role']
+  text: string
+}): string {
+  const value = item.text.trim()
+  if (value) return value
+  if (item.role === 'assistant') return 'Tool call message'
+  return '...'
+}
+
 async function fetchSandbox(apiUrl: string, sandboxId: string) {
   const response = await fetch(`${apiUrl}/sandboxes/${sandboxId}`)
   if (!response.ok) {
@@ -186,7 +196,10 @@ function TraceDialog({
                       Message · {item.role}
                     </p>
                     <pre className='whitespace-pre-wrap break-words text-sm'>
-                      {item.text || '...'}
+                      {traceMessageText({
+                        role: item.role,
+                        text: item.text,
+                      })}
                     </pre>
                   </div>
                 )
