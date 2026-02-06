@@ -130,3 +130,87 @@ Deno.test('reduceCodingEnvelope reads message.text when content missing', () => 
   assertEquals(state.messages[0].text, 'hello')
   assertEquals(state.messages[0].status, 'complete')
 })
+
+Deno.test('reduceCodingEnvelope tracks turn lifecycle and trace metadata', () => {
+  const state1 = reduceCodingEnvelope(initialCodingUiState, {
+    cursor: 1,
+    event: {
+      source: 'agent',
+      type: 'turn_start',
+      payload: { type: 'turn_start', timestamp: 1_000 },
+    },
+  })
+  const state2 = reduceCodingEnvelope(state1, {
+    cursor: 2,
+    event: {
+      source: 'agent',
+      type: 'message_end',
+      payload: {
+        type: 'message_end',
+        message: { role: 'user', text: 'build ui', timestamp: 1_100 },
+      },
+    },
+  })
+  const state3 = reduceCodingEnvelope(state2, {
+    cursor: 3,
+    event: {
+      source: 'agent',
+      type: 'tool_execution_start',
+      payload: {
+        type: 'tool_execution_start',
+        toolCallId: 'tool-1',
+        toolName: 'bash',
+        timestamp: 1_200,
+      },
+    },
+  })
+  const state4 = reduceCodingEnvelope(state3, {
+    cursor: 4,
+    event: {
+      source: 'agent',
+      type: 'tool_execution_end',
+      payload: {
+        type: 'tool_execution_end',
+        toolCallId: 'tool-1',
+        toolName: 'bash',
+        timestamp: 1_800,
+      },
+    },
+  })
+  const state5 = reduceCodingEnvelope(state4, {
+    cursor: 5,
+    event: {
+      source: 'agent',
+      type: 'message_end',
+      payload: {
+        type: 'message_end',
+        message: { role: 'assistant', text: 'done', timestamp: 1_900 },
+      },
+    },
+  })
+  const state6 = reduceCodingEnvelope(state5, {
+    cursor: 6,
+    event: {
+      source: 'agent',
+      type: 'turn_end',
+      payload: { type: 'turn_end', timestamp: 2_000 },
+    },
+  })
+
+  assertEquals(state6.turns.length, 1)
+  assertEquals(state6.turns[0]?.status, 'completed')
+  assertEquals(state6.turns[0]?.startedAtMs, 1_000)
+  assertEquals(state6.turns[0]?.endedAtMs, 2_000)
+  assertEquals(state6.turns[0]?.toolCalls.length, 1)
+  assertEquals(state6.turns[0]?.toolCalls[0]?.status, 'done')
+  assertEquals(
+    state6.turns[0]?.timeline.filter((i) => i.kind === 'message').length,
+    2,
+  )
+  assertEquals(
+    state6.turns[0]?.finalAssistantMessageId,
+    state6.messages.find((m) => m.role === 'assistant' && m.turnIndex === 1)
+      ?.id,
+  )
+  assertEquals(state6.activeTurnIndex, null)
+})

@@ -45,6 +45,7 @@ export function persistedMessagesToUiMessages(
       text: message.content,
       status: 'complete',
       cursor: message.cursor,
+      turnIndex: message.turnIndex,
     }
   })
 }

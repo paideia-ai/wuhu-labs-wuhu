@@ -230,6 +230,161 @@ function toAgentRole(value: string): AgentRole {
   }
 }
 
+function readTimestampMs(event: SandboxDaemonAgentEvent): number | undefined {
+  const payload = event.payload as Record<string, unknown>
+  const payloadTs = payload.timestamp
+  if (typeof payloadTs === 'number' && Number.isFinite(payloadTs)) {
+    return payloadTs
+  }
+  if (typeof event.timestamp === 'number' && Number.isFinite(event.timestamp)) {
+    return event.timestamp
+  }
+  return undefined
+}
+
+function withTurn(
+  state: CodingUiState,
+  timestampMs?: number,
+): CodingUiState {
+  if (
+    typeof state.activeTurnIndex === 'number' &&
+    state.turns.some((t) => t.turnIndex === state.activeTurnIndex)
+  ) {
+    return state
+  }
+
+  const turnIndex = state.nextTurnIndex + 1
+  const nextTurn = {
+    turnIndex,
+    status: 'running' as const,
+    startedAtMs: timestampMs,
+    endedAtMs: undefined,
+    userMessageId: undefined,
+    finalAssistantMessageId: undefined,
+    toolCalls: [],
+    timeline: [],
+  }
+
+  return {
+    ...state,
+    activeTurnIndex: turnIndex,
+    nextTurnIndex: turnIndex,
+    turns: [...state.turns, nextTurn],
+  }
+}
+
+function updateTurnByIndex(
+  turns: CodingUiState['turns'],
+  turnIndex: number,
+  updater: (
+    turn: CodingUiState['turns'][number],
+  ) => CodingUiState['turns'][number],
+): CodingUiState['turns'] {
+  const idx = turns.findIndex((t) => t.turnIndex === turnIndex)
+  if (idx === -1) return turns
+  const next = [...turns]
+  next[idx] = updater(next[idx])
+  return next
+}
+
+function upsertTurnToolCall(
+  state: CodingUiState,
+  options: {
+    toolCallId: string
+    toolName: string
+    status: 'running' | 'done' | 'error'
+    cursor: number
+    timestampMs?: number
+    addTimelineItem?: boolean
+  },
+): CodingUiState {
+  if (typeof state.activeTurnIndex !== 'number') return state
+  const turnIndex = state.activeTurnIndex
+  const turns = updateTurnByIndex(state.turns, turnIndex, (turn) => {
+    const toolCalls = [...turn.toolCalls]
+    const toolIdx = toolCalls.findIndex((call) =>
+      call.id === options.toolCallId
+    )
+    const startedAtMs = toolIdx >= 0
+      ? toolCalls[toolIdx].startedAtMs
+      : options.timestampMs
+    const nextCall = {
+      id: options.toolCallId,
+      toolName: options.toolName,
+      status: options.status,
+      cursor: options.cursor,
+      startedAtMs,
+      endedAtMs: options.status === 'running'
+        ? undefined
+        : (options.timestampMs ?? toolCalls[toolIdx]?.endedAtMs),
+    }
+    if (toolIdx === -1) toolCalls.push(nextCall)
+    else toolCalls[toolIdx] = { ...toolCalls[toolIdx], ...nextCall }
+
+    const timeline = [...turn.timeline]
+    const timelineIdx = timeline.findIndex((item) =>
+      item.kind === 'tool' && item.toolCallId === options.toolCallId
+    )
+    if (timelineIdx === -1 && options.addTimelineItem !== false) {
+      timeline.push({
+        id: `trace-tool-${options.toolCallId}-${options.cursor}`,
+        kind: 'tool',
+        toolCallId: options.toolCallId,
+        toolName: options.toolName,
+        status: options.status,
+        cursor: options.cursor,
+        timestampMs: options.timestampMs,
+      })
+    } else if (timelineIdx >= 0) {
+      const current = timeline[timelineIdx]
+      if (current?.kind === 'tool') {
+        timeline[timelineIdx] = {
+          ...current,
+          toolName: options.toolName,
+          status: options.status,
+          cursor: options.cursor,
+          timestampMs: options.timestampMs ?? current.timestampMs,
+        }
+      }
+    }
+
+    return { ...turn, toolCalls, timeline }
+  })
+  return turns === state.turns ? state : { ...state, turns }
+}
+
+function appendTraceMessageItem(
+  state: CodingUiState,
+  message: UiMessage,
+): CodingUiState {
+  const turnIndex = message.turnIndex
+  if (typeof turnIndex !== 'number') return state
+  const turns = updateTurnByIndex(state.turns, turnIndex, (turn) => {
+    const timeline = [...turn.timeline]
+    const timelineId = `trace-msg-${message.id}-${message.cursor ?? 0}`
+    if (timeline.some((item) => item.id === timelineId)) {
+      return turn
+    }
+    timeline.push({
+      id: timelineId,
+      kind: 'message',
+      role: message.role,
+      messageId: message.id,
+      text: message.text,
+      cursor: message.cursor ?? 0,
+      timestampMs: message.timestampMs,
+    })
+    const userMessageId = message.role === 'user'
+      ? message.id
+      : turn.userMessageId
+    const finalAssistantMessageId = message.role === 'assistant'
+      ? message.id
+      : turn.finalAssistantMessageId
+    return { ...turn, timeline, userMessageId, finalAssistantMessageId }
+  })
+  return turns === state.turns ? state : { ...state, turns }
+}
+
 export function reduceCodingEnvelope(
   state: CodingUiState,
   envelope: StreamEnvelope<SandboxDaemonEvent>,
@@ -244,7 +399,7 @@ export function reduceCodingEnvelope(
     return { ...state, activities: [] }
   }
 
-  const next: CodingUiState = { ...state, cursor, lastEventType: event.type }
+  let next: CodingUiState = { ...state, cursor, lastEventType: event.type }
 
   const agentEvent = coerceAgentEvent(event)
   if (!agentEvent) {
@@ -253,12 +408,61 @@ export function reduceCodingEnvelope(
 
   const payload = agentEvent.payload
   const t = payload.type
+  const timestampMs = readTimestampMs(agentEvent)
+
+  if (t === 'turn_start') {
+    next = withTurn(next, timestampMs)
+  }
 
   const activities = updateActivityFromEvent(next.activities, agentEvent)
+  next = { ...next, activities }
+
+  const toolCallIdRaw = (payload as Record<string, unknown>).toolCallId
+  const toolCallId = typeof toolCallIdRaw === 'string' && toolCallIdRaw.length
+    ? toolCallIdRaw
+    : ''
+  const toolNameRaw = (payload as Record<string, unknown>).toolName
+  const toolName = typeof toolNameRaw === 'string' && toolNameRaw.length
+    ? toolNameRaw
+    : 'tool'
+
+  if (t === 'tool_execution_start') {
+    next = withTurn(next, timestampMs)
+    next = upsertTurnToolCall(next, {
+      toolCallId: toolCallId || `tool-${cursor}`,
+      toolName,
+      status: 'running',
+      cursor,
+      timestampMs,
+      addTimelineItem: true,
+    })
+  } else if (t === 'tool_execution_update') {
+    next = withTurn(next, timestampMs)
+    next = upsertTurnToolCall(next, {
+      toolCallId: toolCallId || `tool-${cursor}`,
+      toolName,
+      status: 'running',
+      cursor,
+      timestampMs,
+      addTimelineItem: false,
+    })
+  } else if (t === 'tool_execution_end') {
+    next = withTurn(next, timestampMs)
+    next = upsertTurnToolCall(next, {
+      toolCallId: toolCallId || `tool-${cursor}`,
+      toolName,
+      status: (payload as Record<string, unknown>).isError ? 'error' : 'done',
+      cursor,
+      timestampMs,
+      addTimelineItem: false,
+    })
+  }
 
   let messages = next.messages
+  let completedMessageForTrace: UiMessage | null = null
 
   if (t === 'message_start' || t === 'message_update' || t === 'message_end') {
+    next = withTurn(next, timestampMs)
     const payloadRecord = payload as Record<string, unknown>
     const message = payloadRecord.message
     const textDelta = !message ? coerceStreamingTextDelta(payloadRecord) : ''
@@ -312,7 +516,12 @@ export function reduceCodingEnvelope(
           status: isStreaming ? 'streaming' : 'complete',
           cursor,
           timestamp: formatTimestamp(timestamp),
+          timestampMs: timestamp,
+          turnIndex: next.activeTurnIndex ?? undefined,
         })
+        if (!isStreaming) {
+          completedMessageForTrace = messages.find((m) => m.id === id) ?? null
+        }
       } else {
         const existing = messages[existingIdx]
         const existingText = existing.text ?? ''
@@ -330,11 +539,18 @@ export function reduceCodingEnvelope(
             nextText = existingText + textDelta
           }
         }
-        messages = upsertMessage(messages, {
+        const updated: UiMessage = {
           ...existing,
           text: nextText,
           status: isStreaming ? 'streaming' : 'complete',
-        })
+          turnIndex: existing.turnIndex ?? next.activeTurnIndex ?? undefined,
+        }
+        messages = upsertMessage(messages, updated)
+        if (!isStreaming) {
+          completedMessageForTrace = messages.find((m) =>
+            m.id === updated.id
+          ) ?? null
+        }
       }
     } else {
       const { role, text, thinking, toolCalls, timestamp } =
@@ -374,9 +590,64 @@ export function reduceCodingEnvelope(
         status,
         cursor,
         timestamp: formatTimestamp(timestamp),
+        timestampMs: timestamp,
+        turnIndex: next.activeTurnIndex ?? undefined,
       }
 
       messages = upsertMessage(messages, base)
+      if (status === 'complete') {
+        completedMessageForTrace = messages.find((m) =>
+          m.id === base.id
+        ) ?? null
+      }
+    }
+  }
+
+  if (t === 'turn_end') {
+    const payloadRecord = payload as Record<string, unknown>
+    const turnEndMessage = payloadRecord.message
+    if (isRecord(turnEndMessage)) {
+      const { role, text, thinking, toolCalls, timestamp } =
+        extractMessageParts(
+          turnEndMessage,
+        )
+      const messageRecord = turnEndMessage
+      const sig = (typeof messageRecord.textSignature === 'string'
+        ? messageRecord.textSignature
+        : typeof messageRecord.thinkingSignature === 'string'
+        ? messageRecord.thinkingSignature
+        : '') ||
+        `${role}-${timestamp ?? ''}`
+      const id = sig || `msg-${cursor}`
+      const toolName = typeof messageRecord.toolName === 'string'
+        ? messageRecord.toolName
+        : undefined
+      const fallbackTurnIndex = next.activeTurnIndex ??
+        (typeof next.nextTurnIndex === 'number'
+          ? next.nextTurnIndex
+          : undefined)
+      messages = upsertMessage(messages, {
+        id,
+        role: role === 'toolResult' ? 'tool' : toAgentRole(role),
+        title: role === 'user'
+          ? 'You'
+          : role === 'assistant'
+          ? 'Agent'
+          : role === 'toolResult'
+          ? toolName || 'Tool result'
+          : role,
+        text,
+        thinking,
+        toolCalls,
+        status: 'complete',
+        cursor,
+        timestamp: formatTimestamp(timestamp),
+        timestampMs: timestamp,
+        turnIndex: fallbackTurnIndex,
+      })
+      completedMessageForTrace = messages.find((m) =>
+        m.id === id
+      ) ?? completedMessageForTrace
     }
   }
 
@@ -386,10 +657,37 @@ export function reduceCodingEnvelope(
     )
   }
 
+  next = { ...next, messages }
+
+  if (
+    completedMessageForTrace && completedMessageForTrace.turnIndex !== undefined
+  ) {
+    next = appendTraceMessageItem(next, completedMessageForTrace)
+  }
+
+  if (t === 'turn_end' && typeof next.activeTurnIndex === 'number') {
+    const finishingTurnIndex = next.activeTurnIndex
+    const finalAssistant = [...messages].reverse().find((message) =>
+      message.role === 'assistant' &&
+      message.status === 'complete' &&
+      message.turnIndex === finishingTurnIndex
+    )
+    const turns = updateTurnByIndex(next.turns, finishingTurnIndex, (turn) => ({
+      ...turn,
+      status: 'completed',
+      endedAtMs: timestampMs ?? turn.endedAtMs,
+      finalAssistantMessageId: finalAssistant?.id ??
+        turn.finalAssistantMessageId,
+    }))
+    next = {
+      ...next,
+      turns,
+      activeTurnIndex: null,
+    }
+  }
+
   return {
     ...next,
-    activities,
-    messages,
     agentStatus: nextAgentStatus(next.agentStatus, agentEvent),
   }
 }

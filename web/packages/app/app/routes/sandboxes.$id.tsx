@@ -1,31 +1,40 @@
 import { Form, Link, redirect, useLoaderData } from 'react-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Route } from './+types/sandboxes.$id.ts'
 import {
   abortSandbox,
   sendSandboxPrompt,
   useSandboxStreams,
 } from '~/lib/sandbox/use-sandbox.ts'
-import type { UiMessage } from '~/lib/sandbox/types.ts'
-import { queuedPromptIsRecordedInCoding } from '~/lib/sandbox/dedup.ts'
 import {
   persistedMessagesToUiMessages,
   type PersistedSandboxMessage,
 } from '~/lib/sandbox/history.ts'
-import { initialCodingUiState } from '~/lib/sandbox/types.ts'
-import { Button } from '@wuhu/shadcn/components/button'
+import { initialCodingUiState, type UiMessage } from '~/lib/sandbox/types.ts'
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@wuhu/shadcn/components/card'
+  type PendingPromptDraft,
+  projectAgentChatState,
+  type TurnView,
+} from '~/lib/sandbox/chat-projection.ts'
+import { Button } from '@wuhu/shadcn/components/button'
 import { Badge } from '@wuhu/shadcn/components/badge'
 import { Textarea } from '@wuhu/shadcn/components/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@wuhu/shadcn/components/select'
 
-function formatTimestamp(value?: number): string {
-  const date = value ? new Date(value) : new Date()
-  return date.toLocaleTimeString([], { hour12: false })
+function formatDateTime(value?: number): string {
+  if (!value) return 'Unknown'
+  const date = new Date(value)
+  return date.toLocaleString()
+}
+
+function queueModeLabel(mode: 'steer' | 'followUp'): string {
+  return mode === 'steer' ? 'Steer' : 'Follow-up'
 }
 
 async function fetchSandbox(apiUrl: string, sandboxId: string) {
@@ -104,16 +113,222 @@ export async function action({ params, request }: Route.ActionArgs) {
   return null
 }
 
+function MessageBubble({ message }: { message: UiMessage }) {
+  const isUser = message.role === 'user'
+  return (
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={isUser
+          ? 'max-w-[85%] rounded-2xl bg-primary px-4 py-3 text-sm text-primary-foreground'
+          : 'max-w-[90%] rounded-2xl border bg-background px-4 py-3 text-sm text-foreground'}
+      >
+        <pre className='whitespace-pre-wrap break-words font-sans'>
+          {message.text || '...'}
+        </pre>
+      </div>
+    </div>
+  )
+}
+
+function TraceDialog({
+  turn,
+  onClose,
+}: {
+  turn: TurnView
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    globalThis.addEventListener('keydown', onKeyDown)
+    return () => globalThis.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  return (
+    <div
+      className='fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4'
+      role='dialog'
+      aria-modal='true'
+      aria-label='Turn trace details'
+    >
+      <div className='absolute inset-0' onClick={onClose} />
+      <div className='relative z-10 flex h-[80dvh] w-full max-w-3xl flex-col rounded-2xl border bg-background shadow-xl'>
+        <div className='flex items-center justify-between border-b px-5 py-3'>
+          <div>
+            <p className='text-xs uppercase tracking-wide text-muted-foreground'>
+              Turn {turn.turnIndex}
+            </p>
+            <h2 className='text-lg font-semibold'>Trace Preview</h2>
+          </div>
+          <Button variant='outline' size='sm' onClick={onClose}>Close</Button>
+        </div>
+        <div className='flex-1 space-y-3 overflow-auto p-5'>
+          {turn.traceItems.length === 0
+            ? (
+              <p className='text-sm text-muted-foreground'>
+                No trace items were captured for this turn.
+              </p>
+            )
+            : turn.traceItems.map((item) => {
+              if (
+                item.kind === 'message' &&
+                item.role === 'assistant' &&
+                item.messageId === turn.assistantMessage?.id
+              ) {
+                return null
+              }
+
+              if (item.kind === 'message') {
+                return (
+                  <div key={item.id} className='rounded-xl border p-3'>
+                    <p className='mb-1 text-xs uppercase tracking-wide text-muted-foreground'>
+                      Message · {item.role}
+                    </p>
+                    <pre className='whitespace-pre-wrap break-words text-sm'>
+                      {item.text || '...'}
+                    </pre>
+                  </div>
+                )
+              }
+
+              return (
+                <div key={item.id} className='rounded-xl border p-3'>
+                  <p className='mb-1 text-xs uppercase tracking-wide text-muted-foreground'>
+                    Tool Call
+                  </p>
+                  <p className='text-sm font-medium'>{item.toolName}</p>
+                  <p className='text-xs text-muted-foreground'>
+                    Status: {item.status}
+                  </p>
+                </div>
+              )
+            })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PodStatusDialog({
+  sandbox,
+  onClose,
+}: {
+  sandbox: {
+    id: string
+    status: string
+    namespace: string
+    jobName: string
+    podName: string | null
+    podIp: string | null
+    daemonPort: number
+    previewUrl: string
+    repoFullName: string | null
+    createdAt: string
+    updatedAt: string
+  }
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    globalThis.addEventListener('keydown', onKeyDown)
+    return () => globalThis.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  return (
+    <div
+      className='fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4'
+      role='dialog'
+      aria-modal='true'
+      aria-label='Pod status'
+    >
+      <div className='absolute inset-0' onClick={onClose} />
+      <div className='relative z-10 w-full max-w-xl rounded-2xl border bg-background p-5 shadow-xl'>
+        <div className='mb-4 flex items-start justify-between gap-3'>
+          <div>
+            <p className='text-xs uppercase tracking-wide text-muted-foreground'>
+              Sandbox Infrastructure
+            </p>
+            <h2 className='text-lg font-semibold'>Pod Status</h2>
+          </div>
+          <Button variant='outline' size='sm' onClick={onClose}>Close</Button>
+        </div>
+
+        <div className='space-y-2 text-sm'>
+          <p>
+            <span className='text-muted-foreground'>Sandbox:</span> {sandbox.id}
+          </p>
+          <p>
+            <span className='text-muted-foreground'>State:</span>{' '}
+            {sandbox.status}
+          </p>
+          <p>
+            <span className='text-muted-foreground'>Namespace:</span>{' '}
+            {sandbox.namespace}
+          </p>
+          <p>
+            <span className='text-muted-foreground'>Job:</span>{' '}
+            {sandbox.jobName}
+          </p>
+          <p>
+            <span className='text-muted-foreground'>Pod:</span>{' '}
+            {sandbox.podName ?? 'Pending'}
+          </p>
+          <p>
+            <span className='text-muted-foreground'>Pod IP:</span>{' '}
+            {sandbox.podIp ?? 'Pending'}
+          </p>
+          <p>
+            <span className='text-muted-foreground'>Daemon Port:</span>{' '}
+            {sandbox.daemonPort}
+          </p>
+          <p>
+            <span className='text-muted-foreground'>Repo:</span>{' '}
+            {sandbox.repoFullName ?? 'None'}
+          </p>
+          <p>
+            <span className='text-muted-foreground'>Preview:</span>{' '}
+            <a
+              href={sandbox.previewUrl}
+              target='_blank'
+              rel='noreferrer'
+              className='text-primary underline'
+            >
+              {sandbox.previewUrl}
+            </a>
+          </p>
+          <p>
+            <span className='text-muted-foreground'>Created:</span>{' '}
+            {sandbox.createdAt}
+          </p>
+          <p>
+            <span className='text-muted-foreground'>Updated:</span>{' '}
+            {sandbox.updatedAt}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function SandboxDetail() {
   const { sandbox, persistedMessages, persistedCursor } = useLoaderData<
     typeof loader
   >()
 
   const initialCodingState = useMemo(() => {
+    const messages = persistedMessagesToUiMessages(persistedMessages)
+    const maxTurnIndex = messages.reduce(
+      (max, message) => Math.max(max, message.turnIndex ?? 0),
+      0,
+    )
     return {
       ...initialCodingUiState,
       cursor: persistedCursor,
-      messages: persistedMessagesToUiMessages(persistedMessages),
+      messages,
+      nextTurnIndex: maxTurnIndex,
     }
   }, [persistedCursor, persistedMessages])
 
@@ -121,11 +336,55 @@ export default function SandboxDetail() {
     initialCodingState,
     reconnect: true,
   })
+
   const [prompt, setPrompt] = useState('')
-  const [pendingPrompts, setPendingPrompts] = useState<UiMessage[]>([])
+  const [queueMode, setQueueMode] = useState<'steer' | 'followUp'>('followUp')
+  const [pendingPrompts, setPendingPrompts] = useState<PendingPromptDraft[]>([])
   const [sendError, setSendError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
+  const [traceTurn, setTraceTurn] = useState<TurnView | null>(null)
+  const [showPodDialog, setShowPodDialog] = useState(false)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  const messagesEndRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const id = globalThis.setInterval(() => setNowMs(Date.now()), 1000)
+    return () => globalThis.clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    if (!pendingPrompts.length) return
+    const queued = new Set(
+      control.prompts.map((prompt) =>
+        `${prompt.streamingBehavior ?? 'followUp'}:${prompt.message}`
+      ),
+    )
+    setPendingPrompts((prev) =>
+      prev.filter((draft) =>
+        !queued.has(`${draft.streamingBehavior}:${draft.message}`)
+      )
+    )
+  }, [control.prompts, pendingPrompts.length])
+
+  const projection = useMemo(
+    () =>
+      projectAgentChatState({
+        coding,
+        control,
+        pendingPrompts,
+        nowMs,
+      }),
+    [coding, control, pendingPrompts, nowMs],
+  )
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [
+    projection.completedTurns.length,
+    projection.activeTurn?.workedForLabel,
+    projection.queuePrompts.length,
+  ])
 
   const statusVariant = useMemo(() => {
     if (
@@ -141,61 +400,36 @@ export default function SandboxDetail() {
   const handleSend = async () => {
     const text = prompt.trim()
     if (!text || sending) return
+
+    const localDraft: PendingPromptDraft = {
+      id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      message: text,
+      timestampMs: Date.now(),
+      streamingBehavior: queueMode,
+    }
+
     setSendError(null)
     setSending(true)
     setPrompt('')
-    const localPrompt: UiMessage = {
-      id: `local-prompt-${Date.now()}`,
-      role: 'user',
-      title: 'You',
-      text,
-      status: 'complete',
-      timestamp: formatTimestamp(),
-    }
-    setPendingPrompts((prev) => [...prev, localPrompt].slice(-20))
+    setPendingPrompts((prev) => [...prev, localDraft].slice(-50))
+
     try {
-      await sendSandboxPrompt({ sandboxId: sandbox.id, message: text })
+      await sendSandboxPrompt({
+        sandboxId: sandbox.id,
+        message: text,
+        streamingBehavior: queueMode,
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setSendError(message)
+      setPendingPrompts((prev) =>
+        prev.filter((item) => item.id !== localDraft.id)
+      )
+      setPrompt(text)
     } finally {
       setSending(false)
     }
   }
-
-  useEffect(() => {
-    if (!pendingPrompts.length) return
-    const queuedMessages = new Set(control.prompts.map((p) => p.message))
-    setPendingPrompts((prev) => prev.filter((m) => !queuedMessages.has(m.text)))
-  }, [control.prompts, pendingPrompts.length])
-
-  const displayMessages = useMemo(() => {
-    const controlMessages: UiMessage[] = control.prompts
-      .filter((p) => {
-        return !queuedPromptIsRecordedInCoding(p, coding.messages)
-      })
-      .map((p) => ({
-        id: `queued-prompt-${p.cursor}`,
-        role: 'user',
-        title: 'You',
-        text: p.message,
-        status: 'pending',
-        cursor: p.cursor,
-        timestamp: formatTimestamp(p.timestamp),
-      }))
-
-    const all = [...controlMessages, ...coding.messages, ...pendingPrompts]
-    const byId = new Map<string, UiMessage>()
-    for (const m of all) {
-      if (!byId.has(m.id)) byId.set(m.id, m)
-    }
-    return [...byId.values()].sort((a, b) => {
-      const aCursor = a.cursor ?? Number.POSITIVE_INFINITY
-      const bCursor = b.cursor ?? Number.POSITIVE_INFINITY
-      if (aCursor !== bCursor) return aCursor - bCursor
-      return a.id.localeCompare(b.id)
-    })
-  }, [coding.messages, control.prompts, pendingPrompts])
 
   const handleAbort = async () => {
     if (aborting) return
@@ -208,75 +442,38 @@ export default function SandboxDetail() {
   }
 
   return (
-    <div className='container mx-auto p-8 max-w-4xl'>
-      <Button variant='ghost' size='sm' asChild className='mb-4'>
-        <Link to='/'>← Back</Link>
-      </Button>
-
-      <div className='flex items-baseline justify-between gap-4 mb-6'>
-        <h1 className='text-3xl font-bold'>{sandbox.name || sandbox.id}</h1>
-        <div className='flex gap-2 items-center'>
-          <Badge variant={statusVariant}>{control.statusLabel}</Badge>
-          <span className='text-sm text-muted-foreground'>
-            {connectionStatus}
-          </span>
-        </div>
-      </div>
-
-      <Card className='mb-6'>
-        <CardContent className='pt-6 space-y-2'>
-          <p className='text-sm'>
-            <span className='text-muted-foreground'>Pod status:</span>{' '}
-            <span className='font-medium'>{sandbox.status}</span>
-          </p>
-          <p className='text-sm'>
-            <span className='text-muted-foreground'>Repo:</span>{' '}
-            <span className='font-medium'>
-              {sandbox.repoFullName ?? 'None'}
-            </span>
-          </p>
-          <p className='text-sm'>
-            <span className='text-muted-foreground'>Preview:</span>{' '}
-            <a
-              href={sandbox.previewUrl}
-              target='_blank'
-              rel='noreferrer'
-              className='text-primary hover:underline'
-            >
-              {sandbox.previewUrl}
-            </a>
-          </p>
-          <p className='text-sm text-muted-foreground'>
-            Namespace: {sandbox.namespace} · Job: {sandbox.jobName}
-          </p>
-          <p className='text-sm text-muted-foreground'>
-            Pod: {sandbox.podName ?? 'Pending'} · IP:{' '}
-            {sandbox.podIp ?? 'Pending'}
-          </p>
-        </CardContent>
-      </Card>
-
-      {control.error && <p className='text-destructive mb-4'>{control.error}
-      </p>}
-
-      <Card>
-        <CardHeader>
-          <div className='flex items-center justify-between'>
-            <CardTitle>Agent Chat</CardTitle>
-            <span className='text-sm text-muted-foreground'>
-              Agent: {coding.agentStatus} · Cursor: {coding.cursor}
-            </span>
+    <div className='flex h-dvh flex-col bg-[radial-gradient(circle_at_top,oklch(0.99_0.01_95)_0%,oklch(0.97_0.01_90)_40%,oklch(0.94_0.01_85)_100%)]'>
+      <header className='border-b bg-background/85 backdrop-blur'>
+        <div className='mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3'>
+          <div className='min-w-0'>
+            <div className='mb-1 flex items-center gap-2'>
+              <Button variant='ghost' size='sm' asChild>
+                <Link to='/'>Back</Link>
+              </Button>
+              <Badge variant={statusVariant}>{control.statusLabel}</Badge>
+            </div>
+            <h1 className='truncate text-xl font-semibold'>
+              {sandbox.name || sandbox.id}
+            </h1>
+            <p className='text-xs text-muted-foreground'>
+              Agent: {coding.agentStatus} · Connection: {connectionStatus}
+            </p>
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className='flex gap-2 mb-4'>
+          <div className='flex items-center gap-2'>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => setShowPodDialog(true)}
+            >
+              Pod Status
+            </Button>
             <Button
               variant='outline'
               size='sm'
               onClick={handleAbort}
               disabled={aborting}
             >
-              Abort
+              {aborting ? 'Aborting…' : 'Abort'}
             </Button>
             <Form method='post'>
               <Button
@@ -290,87 +487,192 @@ export default function SandboxDetail() {
               </Button>
             </Form>
           </div>
+        </div>
+      </header>
 
-          <div className='border rounded-lg p-3 h-[360px] overflow-auto bg-muted/30 mb-4'>
-            {displayMessages.length === 0
-              ? (
-                <div className='text-muted-foreground'>
-                  Waiting for messages…
-                </div>
-              )
-              : (
-                <div className='space-y-3'>
-                  {displayMessages.map((message) => (
-                    <Card key={message.id} className='bg-background'>
-                      <CardContent className='p-3'>
-                        <div className='flex justify-between text-sm text-muted-foreground mb-1'>
-                          <span>
-                            {message.title || message.role}
-                            {message.status === 'streaming' ? ' (typing)' : ''}
-                          </span>
-                          <span>{message.timestamp ?? ''}</span>
-                        </div>
-                        <pre className='whitespace-pre-wrap break-words font-mono text-sm'>
-                        {message.text || (message.status === 'streaming' ? '...' : '')}
-                        </pre>
-                        {message.toolCalls?.length
-                          ? (
-                            <div className='flex flex-wrap gap-1 mt-2'>
-                              {message.toolCalls.map((tool) => (
-                                <Badge
-                                  key={tool.id || tool.name}
-                                  variant='secondary'
-                                  className='text-xs'
-                                >
-                                  {tool.name}
-                                </Badge>
-                              ))}
-                            </div>
-                          )
-                          : null}
-                        {message.thinking
-                          ? (
-                            <details className='mt-2'>
-                              <summary className='cursor-pointer text-sm text-muted-foreground'>
-                                Reasoning
-                              </summary>
-                              <pre className='mt-2 whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground'>
-                            {message.thinking}
-                              </pre>
-                            </details>
-                          )
-                          : null}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
+      <div className='mx-auto grid h-full min-h-0 w-full max-w-6xl grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_320px]'>
+        <section className='flex min-h-0 flex-col overflow-hidden rounded-2xl border bg-background/90 shadow-sm'>
+          <div className='border-b px-4 py-3 text-xs text-muted-foreground'>
+            Turns are grouped by agentic loop. Trace details are hidden behind
+            each "Worked for ..." summary.
           </div>
 
-          <div className='space-y-2'>
+          <div className='flex-1 space-y-4 overflow-auto px-4 py-4'>
+            {projection.completedTurns.length === 0 && !projection.activeTurn
+              ? (
+                <div className='rounded-xl border border-dashed p-4 text-sm text-muted-foreground'>
+                  Waiting for the first turn.
+                </div>
+              )
+              : null}
+
+            {projection.completedTurns.map((turn) => (
+              <div key={`turn-${turn.turnIndex}`} className='space-y-2'>
+                {turn.userMessage && (
+                  <MessageBubble message={turn.userMessage} />
+                )}
+
+                {turn.workedForLabel && (
+                  <button
+                    type='button'
+                    className='text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground'
+                    onClick={() => setTraceTurn(turn)}
+                  >
+                    {turn.workedForLabel}
+                  </button>
+                )}
+
+                {turn.assistantMessage && (
+                  <MessageBubble message={turn.assistantMessage} />
+                )}
+              </div>
+            ))}
+
+            {projection.activeTurn && (
+              <div className='space-y-2 rounded-xl border border-amber-200 bg-amber-50/70 p-3'>
+                {projection.activeTurn.userMessage && (
+                  <MessageBubble message={projection.activeTurn.userMessage} />
+                )}
+                <div className='rounded-lg border border-amber-300 bg-amber-100/40 p-3'>
+                  <p className='text-sm font-medium text-amber-900'>
+                    {projection.activeTurn.workedForLabel ?? 'Working...'}
+                  </p>
+                  <p className='mt-1 text-xs text-amber-900/80'>
+                    Trace output is hidden until the turn finishes.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div className='border-t p-4'>
+            <div className='mb-2 flex flex-wrap items-center gap-2'>
+              <Select
+                value={queueMode}
+                onValueChange={(value) => {
+                  if (value === 'steer' || value === 'followUp') {
+                    setQueueMode(value)
+                  }
+                }}
+              >
+                <SelectTrigger className='w-[180px]'>
+                  <SelectValue placeholder='Queue behavior' />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='followUp'>Follow-up queue</SelectItem>
+                  <SelectItem value='steer'>Steer queue</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className='text-xs text-muted-foreground'>
+                Current mode: {queueModeLabel(queueMode)}
+              </span>
+            </div>
+
             <Textarea
               rows={3}
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder='Send a follow-up prompt…'
+              onChange={(event) => setPrompt(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  void handleSend()
+                }
+              }}
+              placeholder='Send a steer/follow-up prompt...'
             />
-            <div className='flex justify-between items-center'>
-              <span className='text-sm text-muted-foreground'>
-                Shift+Enter for a new line.
-              </span>
-              <Button
-                onClick={handleSend}
-                disabled={!prompt.trim() || sending}
-              >
-                Send
+            <div className='mt-2 flex items-center justify-between'>
+              <p className='text-xs text-muted-foreground'>
+                Enter sends. Shift+Enter inserts a new line.
+              </p>
+              <Button onClick={handleSend} disabled={!prompt.trim() || sending}>
+                {sending ? 'Queueing…' : `Queue ${queueModeLabel(queueMode)}`}
               </Button>
             </div>
             {sendError && (
-              <p className='text-destructive text-sm'>{sendError}</p>
+              <p className='mt-2 text-sm text-destructive'>{sendError}</p>
+            )}
+            {control.error && (
+              <p className='mt-1 text-sm text-destructive'>{control.error}</p>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </section>
+
+        <aside className='flex min-h-0 flex-col gap-4'>
+          <section className='rounded-2xl border bg-background/90 p-4 shadow-sm'>
+            <h2 className='mb-2 text-sm font-semibold'>Queue</h2>
+            {projection.queuePrompts.length === 0
+              ? (
+                <p className='text-sm text-muted-foreground'>
+                  No queued prompts.
+                </p>
+              )
+              : (
+                <div className='space-y-2'>
+                  {projection.queuePrompts.map((item) => (
+                    <div key={item.id} className='rounded-xl border p-2'>
+                      <div className='mb-1 flex items-center gap-2'>
+                        <Badge
+                          variant={item.status === 'queued'
+                            ? 'secondary'
+                            : 'outline'}
+                        >
+                          {item.status}
+                        </Badge>
+                        <Badge variant='outline'>
+                          {queueModeLabel(item.streamingBehavior)}
+                        </Badge>
+                      </div>
+                      <p className='line-clamp-4 text-sm'>{item.message}</p>
+                      <p className='mt-1 text-xs text-muted-foreground'>
+                        {formatDateTime(item.timestampMs)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+          </section>
+
+          <section className='rounded-2xl border bg-background/90 p-4 shadow-sm'>
+            <h2 className='mb-2 text-sm font-semibold'>Sandbox</h2>
+            <div className='space-y-1 text-sm'>
+              <p>
+                <span className='text-muted-foreground'>Status:</span>{' '}
+                {sandbox.status}
+              </p>
+              <p>
+                <span className='text-muted-foreground'>Repo:</span>{' '}
+                {sandbox.repoFullName ?? 'None'}
+              </p>
+              <p>
+                <span className='text-muted-foreground'>Preview:</span>{' '}
+                <a
+                  href={sandbox.previewUrl}
+                  target='_blank'
+                  rel='noreferrer'
+                  className='text-primary underline'
+                >
+                  Open
+                </a>
+              </p>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      {traceTurn && (
+        <TraceDialog
+          turn={traceTurn}
+          onClose={() => setTraceTurn(null)}
+        />
+      )}
+      {showPodDialog && (
+        <PodStatusDialog
+          sandbox={sandbox}
+          onClose={() => setShowPodDialog(false)}
+        />
+      )}
     </div>
   )
 }

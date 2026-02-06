@@ -48,6 +48,8 @@ export interface UiMessage {
   status: MessageStatus
   cursor?: number
   timestamp?: string
+  timestampMs?: number
+  turnIndex?: number
 }
 
 export type ToolActivityStatus = 'running' | 'done' | 'error'
@@ -70,14 +72,62 @@ export interface CodingUiState {
   cursor: number
   messages: UiMessage[]
   activities: ToolActivity[]
+  turns: TurnTrace[]
+  activeTurnIndex: number | null
+  nextTurnIndex: number
   lastEventType?: string
   agentStatus: AgentStatus
+}
+
+export type TurnTraceStatus = 'running' | 'completed'
+
+export interface TurnTraceToolCall {
+  id: string
+  toolName: string
+  status: ToolActivityStatus
+  cursor: number
+  startedAtMs?: number
+  endedAtMs?: number
+}
+
+export type TurnTraceItem =
+  | {
+    id: string
+    kind: 'message'
+    role: AgentRole
+    messageId: string
+    text: string
+    cursor: number
+    timestampMs?: number
+  }
+  | {
+    id: string
+    kind: 'tool'
+    toolCallId: string
+    toolName: string
+    status: ToolActivityStatus
+    cursor: number
+    timestampMs?: number
+  }
+
+export interface TurnTrace {
+  turnIndex: number
+  status: TurnTraceStatus
+  startedAtMs?: number
+  endedAtMs?: number
+  userMessageId?: string
+  finalAssistantMessageId?: string
+  toolCalls: TurnTraceToolCall[]
+  timeline: TurnTraceItem[]
 }
 
 export const initialCodingUiState: CodingUiState = {
   cursor: 0,
   messages: [],
   activities: [],
+  turns: [],
+  activeTurnIndex: null,
+  nextTurnIndex: 0,
   lastEventType: undefined,
   agentStatus: 'Idle',
 }
