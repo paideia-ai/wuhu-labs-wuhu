@@ -24,8 +24,17 @@ function toUiRole(role: string): UiMessage['role'] {
 export function persistedMessagesToUiMessages(
   messages: PersistedSandboxMessage[],
 ): UiMessage[] {
-  return messages.map((message) => {
+  const ordered = [...messages].sort((a, b) => a.cursor - b.cursor)
+  let agenticTurnIndex = 0
+
+  return ordered.map((message) => {
     const role = toUiRole(message.role)
+    if (role === 'user') {
+      agenticTurnIndex += 1
+    } else if (agenticTurnIndex === 0) {
+      agenticTurnIndex = 1
+    }
+
     const title = role === 'user'
       ? 'You'
       : role === 'assistant'
@@ -45,7 +54,7 @@ export function persistedMessagesToUiMessages(
       text: message.content,
       status: 'complete',
       cursor: message.cursor,
-      turnIndex: message.turnIndex,
+      turnIndex: agenticTurnIndex,
     }
   })
 }

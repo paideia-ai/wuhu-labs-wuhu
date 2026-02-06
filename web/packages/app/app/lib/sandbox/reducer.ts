@@ -195,7 +195,8 @@ function nextAgentStatus(
   current: CodingUiState['agentStatus'],
   event: SandboxDaemonAgentEvent,
 ): CodingUiState['agentStatus'] {
-  const t = event.payload?.type
+  const payload = event.payload as Record<string, unknown>
+  const t = payload.type
   switch (t) {
     case 'turn_start':
     case 'message_start':
@@ -211,6 +212,8 @@ function nextAgentStatus(
     case 'tool_execution_end':
       return 'Idle'
     case 'turn_end':
+      if (!isAgenticTurnTerminal(payload)) return 'Responding'
+      return 'Idle'
     case 'agent_end':
       return 'Idle'
     default:
@@ -240,6 +243,45 @@ function readTimestampMs(event: SandboxDaemonAgentEvent): number | undefined {
     return event.timestamp
   }
   return undefined
+}
+
+function readTurnEndStopReason(
+  payload: Record<string, unknown>,
+): string | null {
+  const directStopReason = payload.stopReason
+  if (
+    typeof directStopReason === 'string' &&
+    directStopReason.trim().length > 0
+  ) {
+    return directStopReason
+  }
+
+  const message = payload.message
+  if (!isRecord(message)) return null
+  const messageStopReason = message.stopReason
+  if (
+    typeof messageStopReason === 'string' &&
+    messageStopReason.trim().length > 0
+  ) {
+    return messageStopReason
+  }
+
+  return null
+}
+
+function turnEndHasPendingToolCalls(payload: Record<string, unknown>): boolean {
+  const message = payload.message
+  if (!isRecord(message)) return false
+  return extractMessageParts(message).toolCalls.length > 0
+}
+
+function isAgenticTurnTerminal(payload: Record<string, unknown>): boolean {
+  const stopReason = readTurnEndStopReason(payload)
+  if (stopReason === 'toolUse' || stopReason === 'tool_use') {
+    return false
+  }
+  if (turnEndHasPendingToolCalls(payload)) return false
+  return true
 }
 
 function withTurn(
@@ -666,23 +708,28 @@ export function reduceCodingEnvelope(
   }
 
   if (t === 'turn_end' && typeof next.activeTurnIndex === 'number') {
-    const finishingTurnIndex = next.activeTurnIndex
-    const finalAssistant = [...messages].reverse().find((message) =>
-      message.role === 'assistant' &&
-      message.status === 'complete' &&
-      message.turnIndex === finishingTurnIndex
-    )
-    const turns = updateTurnByIndex(next.turns, finishingTurnIndex, (turn) => ({
-      ...turn,
-      status: 'completed',
-      endedAtMs: timestampMs ?? turn.endedAtMs,
-      finalAssistantMessageId: finalAssistant?.id ??
-        turn.finalAssistantMessageId,
-    }))
-    next = {
-      ...next,
-      turns,
-      activeTurnIndex: null,
+    const payloadRecord = payload as Record<string, unknown>
+    if (isAgenticTurnTerminal(payloadRecord)) {
+      const finishingTurnIndex = next.activeTurnIndex
+      const finalAssistant = [...messages].reverse().find((message) =>
+        message.role === 'assistant' &&
+        message.status === 'complete' &&
+        message.turnIndex === finishingTurnIndex
+      )
+      const turns = updateTurnByIndex(next.turns, finishingTurnIndex, (
+        turn,
+      ) => ({
+        ...turn,
+        status: 'completed',
+        endedAtMs: timestampMs ?? turn.endedAtMs,
+        finalAssistantMessageId: finalAssistant?.id ??
+          turn.finalAssistantMessageId,
+      }))
+      next = {
+        ...next,
+        turns,
+        activeTurnIndex: null,
+      }
     }
   }
 

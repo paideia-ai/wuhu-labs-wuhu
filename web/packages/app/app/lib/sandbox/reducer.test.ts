@@ -57,6 +57,20 @@ Deno.test('reduceCodingEnvelopes does not duplicate tool results', () => {
   assertEquals(uniqueIds.size, ids.length)
 })
 
+Deno.test('reduceCodingEnvelopes merges toolUse sub-turns into one agentic turn', () => {
+  const envelopes = parseFixture()
+  const state = reduceCodingEnvelopes(envelopes)
+
+  assertEquals(state.turns.length, 1)
+  assertEquals(state.turns[0]?.status, 'completed')
+  assertEquals(state.turns[0]?.toolCalls.length, 2)
+
+  const finalAssistant = state.messages.find((m) =>
+    m.role === 'assistant' && m.text.includes('Working directory')
+  )
+  assertEquals(finalAssistant?.turnIndex, 1)
+})
+
 Deno.test('reduceCodingEnvelope supports daemon reset', () => {
   const envelopes = parseFixture()
   const base = reduceCodingEnvelopes(envelopes)
@@ -213,4 +227,93 @@ Deno.test('reduceCodingEnvelope tracks turn lifecycle and trace metadata', () =>
       ?.id,
   )
   assertEquals(state6.activeTurnIndex, null)
+})
+
+Deno.test('reduceCodingEnvelope keeps turn running when turn_end has pending tool calls', () => {
+  const state1 = reduceCodingEnvelope(initialCodingUiState, {
+    cursor: 1,
+    event: {
+      source: 'agent',
+      type: 'turn_start',
+      payload: { type: 'turn_start', timestamp: 1_000 },
+    },
+  })
+  const state2 = reduceCodingEnvelope(state1, {
+    cursor: 2,
+    event: {
+      source: 'agent',
+      type: 'message_end',
+      payload: {
+        type: 'message_end',
+        message: { role: 'user', text: 'inspect repo', timestamp: 1_100 },
+      },
+    },
+  })
+  const state3 = reduceCodingEnvelope(state2, {
+    cursor: 3,
+    event: {
+      source: 'agent',
+      type: 'turn_end',
+      payload: {
+        type: 'turn_end',
+        timestamp: 1_200,
+        message: {
+          role: 'assistant',
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'tool-1',
+              name: 'bash',
+              arguments: { command: 'pwd' },
+            },
+          ],
+        },
+      },
+    },
+  })
+  const state4 = reduceCodingEnvelope(state3, {
+    cursor: 4,
+    event: {
+      source: 'agent',
+      type: 'turn_start',
+      payload: { type: 'turn_start', timestamp: 1_300 },
+    },
+  })
+  const state5 = reduceCodingEnvelope(state4, {
+    cursor: 5,
+    event: {
+      source: 'agent',
+      type: 'message_end',
+      payload: {
+        type: 'message_end',
+        message: { role: 'assistant', text: 'done', timestamp: 1_400 },
+      },
+    },
+  })
+  const state6 = reduceCodingEnvelope(state5, {
+    cursor: 6,
+    event: {
+      source: 'agent',
+      type: 'turn_end',
+      payload: {
+        type: 'turn_end',
+        timestamp: 1_500,
+        message: { role: 'assistant', text: 'done', stopReason: 'stop' },
+      },
+    },
+  })
+
+  assertEquals(state3.activeTurnIndex, 1)
+  assertEquals(state3.turns[0]?.status, 'running')
+  assertEquals(state4.turns.length, 1)
+
+  assertEquals(state6.turns.length, 1)
+  assertEquals(state6.turns[0]?.status, 'completed')
+  assertEquals(state6.turns[0]?.endedAtMs, 1_500)
+  assertEquals(state6.activeTurnIndex, null)
+  assert(
+    state6.messages.filter((m) => m.role === 'assistant' && m.turnIndex === 1)
+      .length >= 1,
+  )
 })
