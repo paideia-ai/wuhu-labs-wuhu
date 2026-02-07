@@ -37,29 +37,35 @@ export function InputArea({
 
   return (
     <div className='border-t p-4'>
-      {isGenerating && (
-        <div className='mb-2 flex items-center gap-2'>
-          <Select
-            value={queueMode}
-            onValueChange={(value) => {
-              if (value === 'steer' || value === 'followUp') {
-                onQueueModeChange(value)
-              }
-            }}
-          >
-            <SelectTrigger className='w-[180px]'>
-              <SelectValue placeholder='Queue behavior' />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value='followUp'>Follow-up</SelectItem>
-              <SelectItem value='steer'>Steer</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant='outline' size='sm' onClick={onInterrupt}>
-            Interrupt
-          </Button>
-        </div>
-      )}
+      <div className='mb-2 flex items-center gap-2'>
+        <Select
+          value={queueMode}
+          onValueChange={(value) => {
+            if (value === 'steer' || value === 'followUp') {
+              onQueueModeChange(value)
+            }
+          }}
+        >
+          <SelectTrigger className='w-[180px]'>
+            <SelectValue placeholder='Queue behavior' />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value='followUp'>Follow-up</SelectItem>
+            <SelectItem value='steer'>Steer</SelectItem>
+          </SelectContent>
+        </Select>
+        {isGenerating
+          ? (
+            <Button variant='outline' size='sm' onClick={onInterrupt}>
+              Interrupt
+            </Button>
+          )
+          : (
+            <span className='text-xs text-muted-foreground'>
+              Used for messages sent while generating.
+            </span>
+          )}
+      </div>
 
       <Textarea
         rows={3}

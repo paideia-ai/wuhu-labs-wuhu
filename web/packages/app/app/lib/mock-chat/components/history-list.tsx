@@ -86,6 +86,12 @@ function HistoryListInner({ history }: { history: HistoryEntry[] }) {
             // agent-start and agent-end are invisible — but agent-end
             // triggers a duration label on the preceding agent block
             if (entry.customType === 'agent-end') {
+              const prev = history[index - 1]
+              if (
+                prev?.type === 'custom' && prev.customType === 'agent-end'
+              ) {
+                return null
+              }
               // Find the agent block before this
               for (let i = index - 1; i >= 0; i--) {
                 if (history[i].type === 'agent-block') {
