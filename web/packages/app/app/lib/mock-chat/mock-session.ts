@@ -273,18 +273,38 @@ export class MockSession implements Session {
     const steers = this._snapshot.steerQueue
     if (steers.length === 0) return
 
-    const steer = steers[0]
-    this._update({ steerQueue: steers.slice(1) })
-
-    // Close current block, add user message, start new block
+    // Finish the current agent block so it gets a proper
+    // Worked for ... duration label.
+    this._finalizeStreaming()
     this._closeCurrentAgentBlock()
+    const agentEnd: CustomEntry = {
+      type: 'custom',
+      id: uid(),
+      customType: 'agent-end',
+      content: '',
+      timestamp: now(),
+    }
 
-    const userEntry: HistoryEntry = {
+    const historyWithEnd = [...this._snapshot.history, agentEnd]
+
+    // Flush all queued steers at once into the history as
+    // user messages, then start a fresh agent block that
+    // continues work under the new guidance.
+    const steerEntries: HistoryEntry[] = steers.map((steer) => ({
       type: 'user-message',
       id: uid(),
       text: `[Steer] ${steer.text}`,
       timestamp: now(),
+    }))
+
+    const agentStart: CustomEntry = {
+      type: 'custom',
+      id: uid(),
+      customType: 'agent-start',
+      content: '',
+      timestamp: now(),
     }
+
     const agentBlock: AgentBlockEntry = {
       type: 'agent-block',
       id: uid(),
@@ -292,11 +312,13 @@ export class MockSession implements Session {
       startedAt: now(),
       endedAt: null,
     }
+
     this._update({
-      history: [...this._snapshot.history, userEntry, agentBlock],
+      history: [...historyWithEnd, ...steerEntries, agentStart, agentBlock],
+      steerQueue: [],
     })
 
-    // Generate a quick response to steer
+    // Generate a quick response to the steer batch
     await this._streamAssistantMessage(
       `Understood, adjusting my approach based on your feedback. Let me re-examine the relevant code.`,
     )
