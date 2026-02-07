@@ -181,8 +181,11 @@ export class MockSession implements Session {
     if (this._working) return
     this._working = true
 
-    // Decide how many tool-call turns (0–4)
-    const numTurns = Math.floor(Math.random() * 5)
+    // Decide how many tool-call turns.
+    // Bias slightly against 0-turn generations so we usually
+    // exercise the tool-call UI, but still allow them sometimes.
+    const rand = Math.random()
+    const numTurns = rand < 0.15 ? 0 : 1 + Math.floor(Math.random() * 4)
 
     for (let t = 0; t < numTurns; t++) {
       if (this._aborted) break
@@ -306,21 +309,10 @@ export class MockSession implements Session {
     const followUp = followUps[0]
     this._update({ followUpQueue: followUps.slice(1) })
 
-    // Close current block, start new generation
-    this._closeCurrentAgentBlock()
-
-    const agentEnd: CustomEntry = {
-      type: 'custom',
-      id: uid(),
-      customType: 'agent-end',
-      content: '',
-      timestamp: now(),
-    }
-    this._update({
-      history: [...this._snapshot.history, agentEnd],
-    })
-
-    // Start fresh generation for the follow-up
+    // Start fresh generation for the follow-up. The previous
+    // generation already closed its agent block and emitted
+    // an agent-end marker, so we don't emit another one here
+    // to avoid duplicate "Worked for ..." labels.
     this._working = false
     this._startGeneration(followUp.text)
   }
