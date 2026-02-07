@@ -166,11 +166,6 @@ function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
-function pickN<T>(arr: readonly T[], n: number): T[] {
-  const shuffled = [...arr].sort(() => Math.random() - 0.5)
-  return shuffled.slice(0, Math.min(n, shuffled.length))
-}
-
 export function randomAssistantFragment(): string {
   return pick(assistantFragments)
 }

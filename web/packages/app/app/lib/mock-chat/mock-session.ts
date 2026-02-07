@@ -7,7 +7,6 @@ import type {
   QueuedMessage,
   Session,
   SessionSnapshot,
-  StreamingMessage,
 } from './types.ts'
 import {
   randomAssistantFragment,
