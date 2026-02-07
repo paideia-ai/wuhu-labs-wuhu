@@ -22,7 +22,11 @@
   },
   "exclude": ["build/"],
   "imports": {
+    "@mariozechner/pi-agent-core": "npm:@mariozechner/pi-agent-core@^0.52.7",
+    "@mariozechner/pi-ai": "npm:@mariozechner/pi-ai@^0.52.7",
     "@std/assert": "jsr:@std/assert@^1",
+    "react-markdown": "npm:react-markdown@^10.1.0",
+    "remark-gfm": "npm:remark-gfm@^4.0.1",
     "~/": "./app/",
     "@react-router/dev": "npm:@react-router/dev@^7.13",
     "@types/react": "npm:@types/react@^19",
