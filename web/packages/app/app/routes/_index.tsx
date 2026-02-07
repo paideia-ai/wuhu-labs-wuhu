@@ -131,7 +131,12 @@ export default function Index() {
 
   return (
     <div className='container mx-auto p-8 max-w-4xl'>
-      <h1 className='text-3xl font-bold mb-6'>Wuhu Sandboxes</h1>
+      <div className='flex items-center justify-between mb-6'>
+        <h1 className='text-3xl font-bold'>Wuhu Sandboxes</h1>
+        <Button variant='outline' asChild>
+          <Link to='/mock-chat'>Mock Agent Chat</Link>
+        </Button>
+      </div>
       {error && <p className='text-destructive mb-4'>{error}</p>}
 
       <Card className='mb-8'>
