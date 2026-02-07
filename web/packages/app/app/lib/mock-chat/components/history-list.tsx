@@ -11,39 +11,39 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Look for agent-start before and agent-end after a given index to compute
- * a "Worked for X" duration label.
+ * Compute a "Worked for X" label for a given agent-end entry by pairing it
+ * with the most recent preceding agent-start (without crossing another
+ * agent-end). Steer messages are treated as part of the same turn and do
+ * not affect the boundary.
  */
 function getDurationLabel(
   history: HistoryEntry[],
-  blockIndex: number,
+  endIndex: number,
 ): string | null {
-  // Look backwards for agent-start
+  const endEntry = history[endIndex]
+  if (
+    endEntry.type !== 'custom' || endEntry.customType !== 'agent-end'
+  ) {
+    return null
+  }
+
+  // Look backwards for the matching agent-start, stopping if we hit a
+  // previous agent-end (which would belong to an earlier turn).
   let agentStart: CustomEntry | null = null
-  for (let i = blockIndex - 1; i >= 0; i--) {
+  for (let i = endIndex - 1; i >= 0; i--) {
     const entry = history[i]
     if (entry.type === 'custom' && entry.customType === 'agent-start') {
       agentStart = entry
       break
     }
-    // Stop searching if we hit another agent-block or user-message
-    if (entry.type === 'agent-block' || entry.type === 'user-message') break
-  }
-
-  // Look forwards for agent-end
-  let agentEnd: CustomEntry | null = null
-  for (let i = blockIndex + 1; i < history.length; i++) {
-    const entry = history[i]
     if (entry.type === 'custom' && entry.customType === 'agent-end') {
-      agentEnd = entry
       break
     }
-    if (entry.type === 'agent-block' || entry.type === 'user-message') break
   }
 
-  if (!agentStart || !agentEnd) return null
+  if (!agentStart) return null
 
-  const duration = agentEnd.timestamp - agentStart.timestamp
+  const duration = endEntry.timestamp - agentStart.timestamp
   return `Worked for ${formatDuration(duration)}`
 }
 
@@ -84,18 +84,11 @@ function HistoryListInner({ history }: { history: HistoryEntry[] }) {
               return <InterruptionBadge key={entry.id} />
             }
             // agent-start and agent-end are invisible — but agent-end
-            // triggers a duration label on the preceding agent block
+            // triggers a duration label for the turn
             if (entry.customType === 'agent-end') {
-              // Find the agent block before this
-              for (let i = index - 1; i >= 0; i--) {
-                if (history[i].type === 'agent-block') {
-                  const label = getDurationLabel(history, i)
-                  if (label) {
-                    return <DurationLabel key={entry.id} label={label} />
-                  }
-                  break
-                }
-                if (history[i].type === 'user-message') break
+              const label = getDurationLabel(history, index)
+              if (label) {
+                return <DurationLabel key={entry.id} label={label} />
               }
             }
             return null

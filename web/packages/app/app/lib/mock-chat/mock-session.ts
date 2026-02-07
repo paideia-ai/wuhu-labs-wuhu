@@ -273,37 +273,20 @@ export class MockSession implements Session {
     const steers = this._snapshot.steerQueue
     if (steers.length === 0) return
 
-    // Finish the current agent block so it gets a proper
-    // Worked for ... duration label.
     this._finalizeStreaming()
     this._closeCurrentAgentBlock()
-    const agentEnd: CustomEntry = {
-      type: 'custom',
-      id: uid(),
-      customType: 'agent-end',
-      content: '',
-      timestamp: now(),
-    }
 
-    const historyWithEnd = [...this._snapshot.history, agentEnd]
-
-    // Flush all queued steers at once into the history as
-    // user messages, then start a fresh agent block that
-    // continues work under the new guidance.
+    // Flush all queued steers at once into the history as user messages,
+    // then start a fresh agent block that continues work under the new
+    // guidance. Steers do not mark a new "Worked for" boundary — the
+    // overall duration is still measured from the original agent-start
+    // to the final agent-end.
     const steerEntries: HistoryEntry[] = steers.map((steer) => ({
       type: 'user-message',
       id: uid(),
       text: `[Steer] ${steer.text}`,
       timestamp: now(),
     }))
-
-    const agentStart: CustomEntry = {
-      type: 'custom',
-      id: uid(),
-      customType: 'agent-start',
-      content: '',
-      timestamp: now(),
-    }
 
     const agentBlock: AgentBlockEntry = {
       type: 'agent-block',
@@ -314,7 +297,7 @@ export class MockSession implements Session {
     }
 
     this._update({
-      history: [...historyWithEnd, ...steerEntries, agentStart, agentBlock],
+      history: [...this._snapshot.history, ...steerEntries, agentBlock],
       steerQueue: [],
     })
 
