@@ -1,7 +1,6 @@
 import type {
   AgentBlockEntry,
   AgentBlockItem,
-  CustomEntry,
   HistoryEntry,
   SessionSnapshot,
   UserMessageEntry,

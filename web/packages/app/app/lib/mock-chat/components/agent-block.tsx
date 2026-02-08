@@ -2,7 +2,7 @@ import { memo } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { AgentBlockView } from '../projection.ts'
-import { type RenderBlock, type ToolGroup } from '../tool-grouping.ts'
+import type { RenderBlock, ToolGroup } from '../tool-grouping.ts'
 
 function categoryLabel(category: ToolGroup['category']): string {
   switch (category) {
