@@ -1,2 +1,2 @@
-1. Read AGENTS.md first.
-2. Do NOT update this file; update AGENTS.md instead.
+- NEVER update this file
+- Instead, read, and when requested, update @AGENTS.md

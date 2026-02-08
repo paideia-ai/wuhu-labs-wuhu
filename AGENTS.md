@@ -1,80 +1,46 @@
-For any AGENTS.md and AGENTS.local.md:
+Meta rule
 
-- No Markdown header, only paragraph and lists.
+- By AGENTS.md, we refer to both AGENTS.md and AGENTS.local.md
+- No Markdown header in AGENTS.md, only paragraph and lists
 - Concise over grammar
-- When working in a folder with AGETNS.md or AGENTS.local.md, read it before any work.
+- When working in a subfolder with AGENTS.md, read them if present
 
----
+Project
 
-Wuhu is a data layer + API for understanding coding agents. It is not a task runner; it is a session log collector and query system.
-Core value: collect logs from Claude Code, Codex, OpenCode, etc. Provide APIs so agents can query them. Git blame a line, find the session, understand the why.
-Full architecture discussion: `docs/architecture-vibe.md`.
+- Wuhu is a self-hosted platform for managing/running background coding agents in sandboxes
+- Coding agents are described in docs/what-are-coding-agents.md
 
-- Deployed URLs:
-- Web UI: `https://wuhu.liu.ms`
-- API: `https://api.wuhu.liu.ms`
+Folders
 
-- Development environment:
-- Self-hosted Terragon instance.
-- Original Terragon product is dead; no commercial future and no hosted data retrieval.
+- core: workspace for backend and sandboxes
+- web: workspace for frontend UI
+- deploy: k8s files for deployment
+- docs: project-wide docs, each workspace/package can have its own docs
 
-- Docker local:
-- Build core image: `docker build -t wuhu-core:test ./core`
-- Build web image: `docker build -t wuhu-web:test ./web`
-- Run core locally (needs postgres): `docker run --rm -e DATABASE_URL="postgresql://user@host.docker.internal/wuhu_dev" -p 3000:3000 wuhu-core:test`
-- Core Dockerfile multi-stage:
-- Node stage: dependency/install preparation (Node 24).
-- Build stage: Deno install + typecheck.
-- Production stage: Deno runtime only (no Node).
+Deno and NodeJS
 
-- Deployment:
-- Deploy via GitHub Actions workflow `.github/workflows/deploy.yml`.
-- Trigger: push to `main` or manual `workflow_dispatch`.
-- Flow:
-- Build Docker image with commit SHA tag.
-- Import to k3s containerd.
-- Apply manifests from `deploy/`.
-- Rolling update deployment.
-- Monitor:
-- `kubectl get pods`
-- `kubectl get deployments`
-- `kubectl logs -l app=core`
-- `kubectl describe pod -l app=core`
+- We only use Deno
+  - Existing NodeJS usage is okay
+  - No new NodeJS usage
+  - When review, always flag new NodeJS usage
+- When adding/removing packages, use Deno cli, no manual deno.json/package.json edit
+    - Do not specify package version manually, prefer latest whenever possible
+- core and web are two different Deno workspaces
+  - core: proper Deno, no node_modules, no package.json
+  - web: with npm compat, nodeModulesDir set to auto, use package.json when needed
 
-- CI:
-- Workflow: `.github/workflows/ci.yml` on PRs and pushes to `main`.
-- Steps:
-- Setup Deno + Node 24.
-- Lint, typecheck, test for `core/` and `web/`.
-- Uses a postgres service container; no external database needed.
+Git
 
-- Reference paths:
-- `.`: this repo.
-- `../wuhu-terragon`: Terragon source code.
-- `../axiia-website`: personal project with useful patterns (Bun-based).
-- `../codex`: OpenAI Codex repo for integration experiments.
-- `../pi-mono`: Pi coding agent monorepo reference harness.
-- `terragon-setup.sh` clones these repos before environment startup.
-
-- Using Terragon code:
-- Working implementations include sandbox providers (E2B, Docker, Daytona), daemon runtime, GitHub integration (PRs/checkpoints/webhooks), real-time updates (PartyKit), and web UI patterns.
-- Copy/adapt what makes sense, but do not inherit Terragon's tight coupling.
-
-- Difference from Terragon:
-- Terragon: agents do coding tasks, tightly integrated product.
-- Wuhu: understand coding agents, composition-first modular data layer.
-- Principles:
-- Expose primitives via API/MCP so agents compose.
-- Small interfaces and easy mocks.
-- GitHub-optional design (mock locally, polling for no-domain setups).
-- Infrastructure-agnostic contracts.
-
-- Reference project:
-- Axiia Website `../axiia-website`: Bun monorepo with Elysia server, React Router SSR, service registry pattern, domain API layering.
-- Useful for API design, DI, config management.
-- See `docs/axiia-website.md`.
-
-- Docs:
-- `docs/architecture-vibe.md`: overall system design.
-- `docs/session-logs-component.md`: first component spec.
-- `docs/axiia-website.md`: reference project notes.
+- Always use squash merge to merge into main
+- When asked for a feature/bugfix
+  - Always create a new branch
+  - Do it end-to-end, do not stop midway
+  - Commit as you go
+  - Perform local validations
+  - Create a PR, make it green
+    - If a PR is red, try reproduce issue locally; fix and verify locally before push again
+  - Ask human to review
+- Exceptions to above:
+  - You are asked to do it interactively
+  - Human just wants to chat/discuss
+  - Repo has dirty work when you started
