@@ -123,11 +123,20 @@ When emitting an assistant message (NOT reasoning summary), the mock:
 ### Steer & follow-up simulation
 
 - `sendMessage()` adds to the appropriate queue based on current `queueMode`.
-- If `isGenerating`, steer messages are "consumed" after the current tool-call
-  turn finishes (interrupts remaining turns, agent responds to steer).
-- Follow-up messages are consumed after the agent finishes all work.
+- If `isGenerating`, steer messages are **consumed after the current tool-call
+  turn finishes**. All queued steers at that point are flushed into the
+  history at once as user messages, and the agent continues working under the
+  new guidance in the **same logical turn**:
+  - No new `agent-start` is emitted.
+  - The eventual `agent-end` still measures from the original `agent-start`.
+- Follow-up messages are consumed **after the agent finishes all work** for the
+  current turn:
+  - The current agent block is closed and an `agent-end` is emitted.
+  - Each follow-up starts a fresh turn with a new `agent-start` and agent
+    block.
 - `interrupt()` aborts the current generation, adds an "interruption" custom
-  entry.
+  entry, and **does not** emit an `agent-end`. Interrupted turns therefore
+  have no "Worked for" label.
 
 ### Referential stability
 
@@ -221,18 +230,30 @@ use) but not rendered.
 
 ## 5. Duration Label
 
-When both an `agent-start` and `agent-end` custom entry exist adjacent to an
-agent block, display:
+Duration is computed from custom `agent-start` / `agent-end` entries, not from
+the agent block itself.
+
+For each `agent-end` entry in `history`, the UI:
+
+1. Walks backwards to find the most recent `agent-start`.
+2. Stops if it encounters another `agent-end` first (that end belongs to an
+   earlier turn).
+3. If a matching `agent-start` is found, compute:
 
 > Worked for X seconds
 
-calculated from `agent-start.timestamp` to `agent-end.timestamp`.
+where `X` is derived from `agent-end.timestamp - agent-start.timestamp`
+(formatted as `Ns` or `Nm Ns`).
 
-If interrupted (no `agent-end`), no duration label is shown.
+This means:
 
-The `agent-start` entry appears right before the agent block, and `agent-end`
-right after. The UI component that renders the agent block looks at the
-surrounding custom entries to compute this.
+- Steers and additional agent blocks between `agent-start` and `agent-end` are
+  treated as part of the **same** turn.
+- Multiple turns in a session are handled by the "stop at previous agent-end"
+  rule.
+
+If interrupted (no `agent-end` for a given `agent-start`), **no duration label
+is shown** for that work.
 
 ---
 
