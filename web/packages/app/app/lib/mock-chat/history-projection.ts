@@ -1,4 +1,4 @@
-import type { CustomEntry, HistoryEntry } from './types.ts'
+import type { CustomEntry, HistoryEntry, UserMessageEntry } from './types.ts'
 
 function formatDuration(ms: number): string {
   const seconds = Math.round(ms / 1000)
@@ -8,37 +8,47 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${remainingSeconds}s`
 }
 
+function isTurnEnd(entry: HistoryEntry): boolean {
+  return entry.type === 'custom' &&
+    (entry.customType === 'agent-end' || entry.customType === 'interruption')
+}
+
 /**
- * Compute a "Worked for X" label for a given agent-end entry by pairing it
- * with the most recent preceding agent-start, without crossing another
- * agent-end. Steer messages and additional agent blocks are treated as part
- * of the same turn and do not affect the boundary.
+ * Compute a "Worked for X" label for a given turn-ending entry (agent-end or
+ * interruption) by pairing it with the most recent preceding user-message,
+ * without crossing another turn-ending marker. Steer messages and additional
+ * agent blocks are treated as part of the same turn.
  */
 export function getDurationLabel(
   history: HistoryEntry[],
   endIndex: number,
 ): string | null {
   const endEntry = history[endIndex]
+  if (endEntry.type !== 'custom') return null
   if (
-    endEntry.type !== 'custom' || endEntry.customType !== 'agent-end'
+    endEntry.customType !== 'agent-end' &&
+    endEntry.customType !== 'interruption'
   ) {
     return null
   }
+  const turnEnd: CustomEntry = endEntry
 
-  let agentStart: CustomEntry | null = null
+  // Walk backwards, collecting user-messages until we hit a turn-end
+  // boundary. Steer messages are user-messages too, so we keep walking
+  // past them. The earliest user-message found is the turn-starting one.
+  let turnStart: UserMessageEntry | null = null
   for (let i = endIndex - 1; i >= 0; i--) {
     const entry = history[i]
-    if (entry.type === 'custom' && entry.customType === 'agent-start') {
-      agentStart = entry
+    if (isTurnEnd(entry)) {
       break
     }
-    if (entry.type === 'custom' && entry.customType === 'agent-end') {
-      break
+    if (entry.type === 'user-message') {
+      turnStart = entry
     }
   }
 
-  if (!agentStart) return null
+  if (!turnStart) return null
 
-  const duration = endEntry.timestamp - agentStart.timestamp
+  const duration = turnEnd.timestamp - turnStart.timestamp
   return `Worked for ${formatDuration(duration)}`
 }

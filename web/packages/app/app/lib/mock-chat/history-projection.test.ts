@@ -2,16 +2,6 @@ import { assertEquals } from '@std/assert'
 import type { HistoryEntry } from './types.ts'
 import { getDurationLabel } from './history-projection.ts'
 
-function agentStart(id: string, timestamp: number): HistoryEntry {
-  return {
-    type: 'custom',
-    id,
-    customType: 'agent-start',
-    content: '',
-    timestamp,
-  }
-}
-
 function agentEnd(id: string, timestamp: number): HistoryEntry {
   return {
     type: 'custom',
@@ -55,21 +45,19 @@ function agentBlock(
   }
 }
 
-Deno.test('getDurationLabel returns null for non-agent-end entries', () => {
+Deno.test('getDurationLabel returns null for non-turn-end entries', () => {
   const history: HistoryEntry[] = [
-    agentStart('s1', 1_000),
+    userMessage('u1', 1_000),
     agentBlock('b1', 1_000, 2_000),
-    userMessage('u1', 1_500),
   ]
 
   assertEquals(getDurationLabel(history, 0), null)
   assertEquals(getDurationLabel(history, 1), null)
-  assertEquals(getDurationLabel(history, 2), null)
 })
 
 Deno.test('getDurationLabel computes duration for simple turn', () => {
   const history: HistoryEntry[] = [
-    agentStart('s1', 1_000),
+    userMessage('u1', 1_000),
     agentBlock('b1', 1_000, 61_000),
     agentEnd('e1', 61_000),
   ]
@@ -78,24 +66,23 @@ Deno.test('getDurationLabel computes duration for simple turn', () => {
   assertEquals(getDurationLabel(history, 2), 'Worked for 1m 0s')
 })
 
-Deno.test('getDurationLabel does not cross a previous agent-end', () => {
+Deno.test('getDurationLabel does not cross a previous turn-end', () => {
   const history: HistoryEntry[] = [
-    agentStart('s1', 1_000),
+    userMessage('u1', 1_000),
     agentBlock('b1', 1_000, 10_000),
     agentEnd('e1', 10_000),
-    userMessage('u1', 11_000),
-    agentStart('s2', 20_000),
+    userMessage('u2', 20_000),
     agentBlock('b2', 20_000, 50_000),
     agentEnd('e2', 50_000),
   ]
 
   assertEquals(getDurationLabel(history, 2), 'Worked for 9s')
-  assertEquals(getDurationLabel(history, 6), 'Worked for 30s')
+  assertEquals(getDurationLabel(history, 5), 'Worked for 30s')
 })
 
 Deno.test('getDurationLabel spans steers and multiple agent blocks', () => {
   const history: HistoryEntry[] = [
-    agentStart('s1', 1_000),
+    userMessage('u1', 1_000),
     agentBlock('b1', 1_000, 10_000),
     userMessage('u-steer-1', 12_000),
     userMessage('u-steer-2', 13_000),
@@ -103,27 +90,42 @@ Deno.test('getDurationLabel spans steers and multiple agent blocks', () => {
     agentEnd('e1', 31_000),
   ]
 
-  // Duration is still measured from the original agent-start to the final
-  // agent-end, ignoring steers and additional agent blocks.
+  // Duration measured from the original user message to the agent-end.
+  // Walks back from agent-end, skips steer user messages and blocks,
+  // finds 'u1' as the turn-starting user message.
   assertEquals(getDurationLabel(history, 5), 'Worked for 30s')
 })
 
-Deno.test('getDurationLabel returns null when no matching agent-start exists', () => {
+Deno.test('getDurationLabel returns null when no user message exists', () => {
   const history: HistoryEntry[] = [
-    userMessage('u1', 1_000),
+    agentBlock('b1', 1_000, 5_000),
     agentEnd('e1', 5_000),
   ]
 
   assertEquals(getDurationLabel(history, 1), null)
 })
 
-Deno.test('getDurationLabel returns null when interrupted and no agent-end is present', () => {
+Deno.test('getDurationLabel works for interruptions too', () => {
   const history: HistoryEntry[] = [
-    agentStart('s1', 1_000),
+    userMessage('u1', 1_000),
     agentBlock('b1', 1_000, 5_000),
     interruption('int1', 6_000),
   ]
 
-  // No agent-end entry at all, so there is no duration label.
-  assertEquals(getDurationLabel(history, 2), null)
+  // Interruption is now a turn-ending marker, so duration is computed.
+  assertEquals(getDurationLabel(history, 2), 'Worked for 5s')
+})
+
+Deno.test('getDurationLabel does not cross a previous interruption', () => {
+  const history: HistoryEntry[] = [
+    userMessage('u1', 1_000),
+    agentBlock('b1', 1_000, 5_000),
+    interruption('int1', 5_000),
+    userMessage('u2', 10_000),
+    agentBlock('b2', 10_000, 20_000),
+    agentEnd('e1', 20_000),
+  ]
+
+  assertEquals(getDurationLabel(history, 2), 'Worked for 4s')
+  assertEquals(getDurationLabel(history, 5), 'Worked for 10s')
 })

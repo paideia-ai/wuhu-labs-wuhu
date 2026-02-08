@@ -60,7 +60,6 @@ function blocks(turn: TurnView): AgentBlockView[] {
 Deno.test('projectMockChat builds a single completed turn', () => {
   const history: HistoryEntry[] = [
     user('u1', 'run tests', 1_000),
-    custom('s1', 'agent-start', 1_100),
     block('b1', 1_100, 5_000, [
       {
         type: 'assistant-message',
@@ -88,7 +87,6 @@ Deno.test('projectMockChat builds a single completed turn', () => {
 Deno.test('projectMockChat builds multiple turns with follow-ups', () => {
   const history: HistoryEntry[] = [
     user('u1', 'first', 1_000),
-    custom('s1', 'agent-start', 1_100),
     block('b1', 1_100, 2_000, [
       {
         type: 'assistant-message',
@@ -99,7 +97,6 @@ Deno.test('projectMockChat builds multiple turns with follow-ups', () => {
     ]),
     custom('e1', 'agent-end', 2_000),
     user('u2', 'follow-up', 3_000),
-    custom('s2', 'agent-start', 3_100),
     block('b2', 3_100, 4_000, [
       {
         type: 'assistant-message',
@@ -126,7 +123,6 @@ Deno.test('projectMockChat builds multiple turns with follow-ups', () => {
 Deno.test('projectMockChat marks interrupted turns', () => {
   const history: HistoryEntry[] = [
     user('u1', 'do something', 1_000),
-    custom('s1', 'agent-start', 1_100),
     block('b1', 1_100, 2_000),
     custom('i1', 'interruption', 2_500),
   ]
@@ -142,7 +138,6 @@ Deno.test('projectMockChat marks interrupted turns', () => {
 Deno.test('projectMockChat keeps steers inside the same turn', () => {
   const history: HistoryEntry[] = [
     user('u1', 'plan work', 1_000),
-    custom('s1', 'agent-start', 1_100),
     block('b1', 1_100, 2_000, [
       {
         type: 'tool-call',
@@ -192,11 +187,9 @@ Deno.test('projectMockChat keeps steers inside the same turn', () => {
 Deno.test('projectMockChat sets activeTurn when last turn has no end', () => {
   const history: HistoryEntry[] = [
     user('u1', 'first', 1_000),
-    custom('s1', 'agent-start', 1_100),
     block('b1', 1_100, 2_000),
     custom('e1', 'agent-end', 2_000),
     user('u2', 'second', 3_000),
-    custom('s2', 'agent-start', 3_100),
     block('b2', 3_100, null),
   ]
 
@@ -204,4 +197,25 @@ Deno.test('projectMockChat sets activeTurn when last turn has no end', () => {
 
   assertEquals(projection.turns.length, 2)
   assertEquals(projection.activeTurn?.prompt.id, 'u2')
+})
+
+Deno.test('projectMockChat starts new turn after interruption', () => {
+  const history: HistoryEntry[] = [
+    user('u1', 'first task', 1_000),
+    block('b1', 1_100, 2_000),
+    custom('i1', 'interruption', 2_500),
+    user('u2', 'new task', 3_000),
+    block('b2', 3_100, 4_000),
+    custom('e1', 'agent-end', 4_000),
+  ]
+
+  const projection = projectMockChat(snapshot(history))
+
+  assertEquals(projection.turns.length, 2)
+  assertEquals(pk(projection.turns[0]!), 'fresh')
+  assertEquals(projection.turns[0]!.endedAt, 2_500)
+  assertEquals(blocks(projection.turns[0]!)[0]!.endReason, 'interrupted')
+  assertEquals(pk(projection.turns[1]!), 'followUp')
+  assertEquals(projection.turns[1]!.endedAt, 4_000)
+  assertEquals(blocks(projection.turns[1]!)[0]!.endReason, 'completed')
 })

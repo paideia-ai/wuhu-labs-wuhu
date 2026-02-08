@@ -145,31 +145,24 @@ export class MockSession implements Session {
   // ---- Generation pipeline ----
 
   private _startGeneration(userText: string): void {
-    // Add user message + agent-start
+    // Add user message + agent block (no agent-start — user message is the
+    // source of truth for when a turn begins).
     const userEntry: HistoryEntry = {
       type: 'user-message',
       id: uid(),
       text: userText,
       timestamp: now(),
     }
-    const agentStart: CustomEntry = {
-      type: 'custom',
-      id: uid(),
-      customType: 'agent-start',
-      content: '',
-      timestamp: now(),
-    }
-    const blockId = uid()
     const agentBlock: AgentBlockEntry = {
       type: 'agent-block',
-      id: blockId,
+      id: uid(),
       items: [],
       startedAt: now(),
       endedAt: null,
     }
 
     this._update({
-      history: [...this._snapshot.history, userEntry, agentStart, agentBlock],
+      history: [...this._snapshot.history, userEntry, agentBlock],
       isGenerating: true,
     })
 
@@ -279,8 +272,8 @@ export class MockSession implements Session {
     // Flush all queued steers at once into the history as user messages,
     // then start a fresh agent block that continues work under the new
     // guidance. Steers do not mark a new "Worked for" boundary — the
-    // overall duration is still measured from the original agent-start
-    // to the final agent-end.
+    // overall duration is still measured from the original user message
+    // to the turn-ending marker.
     const steerEntries: HistoryEntry[] = steers.map((steer) => ({
       type: 'user-message',
       id: uid(),
@@ -316,8 +309,7 @@ export class MockSession implements Session {
 
     // Start fresh generation for the follow-up. The previous
     // generation already closed its agent block and emitted
-    // an agent-end marker, so we don't emit another one here
-    // to avoid duplicate "Worked for ..." labels.
+    // an agent-end marker.
     this._working = false
     this._startGeneration(followUp.text)
   }
