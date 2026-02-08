@@ -8,7 +8,7 @@ a session log collector and query system.
 Core value: collect logs from Claude Code, Codex, OpenCode, etc. Provide APIs so
 agents can query them. Git blame a line → find the session → understand the why.
 
-See `notes/architecture-vibe.md` for full architecture discussion.
+See `docs/architecture-vibe.md` for full architecture discussion.
 
 ## Deployed URLs
 
@@ -120,12 +120,12 @@ Wuhu principles:
 
 Personal project (paideia-ai/axiia-website). Bun monorepo with Elysia server,
 React Router SSR, service registry pattern, and domain API layering. Useful
-patterns for API design, DI, and config management. See `notes/axiia-website.md`
+patterns for API design, DI, and config management. See `docs/axiia-website.md`
 for details.
 
 ## Notes
 
-Architecture discussions live in `notes/`:
+Architecture discussions live in `docs/`:
 
 - `architecture-vibe.md` - overall system design
 - `session-logs-component.md` - first component spec
