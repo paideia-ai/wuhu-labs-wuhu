@@ -17,8 +17,8 @@ See `notes/architecture-vibe.md` for full architecture discussion.
 
 ## Folder Instruction Files
 
-Whenever you need to touch or reference a folder that has an `AGENTS.md`, read
-that file first. Also read `AGENTS.local.md` in that folder when present.
+Whenever you need to work in a folder that has an `AGENTS.md`, read that file
+first. Also read `AGENTS.local.md` in that folder when present.
 
 ## Development Environment
 
