@@ -52,6 +52,11 @@ function lastAgentBlock(history: HistoryEntry[]): AgentBlockEntry | null {
   return null
 }
 
+function isTurnEnd(entry: HistoryEntry): boolean {
+  return entry.type === 'custom' &&
+    (entry.customType === 'agent-end' || entry.customType === 'interruption')
+}
+
 function classifyPromptKind(
   history: HistoryEntry[],
   index: number,
@@ -59,30 +64,21 @@ function classifyPromptKind(
   // No previous entries → fresh prompt.
   if (index === 0) return 'fresh'
 
-  // Walk backwards to find the previous *message-like* thing.
+  // Walk backwards. If we hit a turn-ending marker (agent-end or interruption)
+  // before another user-message, this is a follow-up. If we hit another
+  // user-message first, it's a steer (same turn, no turn-end in between).
   for (let i = index - 1; i >= 0; i--) {
-    const entry = history[i]
+    const entry = history[i]!
 
-    if (entry.type === 'user-message') {
-      // Two user messages in a row – treat later one as follow-up.
+    if (isTurnEnd(entry)) {
       return 'followUp'
     }
 
-    if (entry.type === 'agent-block') {
-      const items = entry.items
-      const last = items[items.length - 1]
-      if (!last) {
-        // Empty block – default to follow-up.
-        return 'followUp'
-      }
-      if (last.type === 'assistant-message') {
-        return 'followUp'
-      }
-      // Tool calls / results / reasoning inside an active tool phase → steer.
+    if (entry.type === 'user-message') {
       return 'steer'
     }
 
-    // Skip custom entries (agent-start/end, interruption) for classification.
+    // Skip agent-blocks — they don't affect classification.
   }
 
   return 'fresh'

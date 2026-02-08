@@ -79,7 +79,7 @@ export interface UserMessageEntry {
 export interface CustomEntry {
   type: 'custom'
   id: string
-  customType: 'interruption' | 'agent-start' | 'agent-end'
+  customType: 'interruption' | 'agent-end'
   content: string
   timestamp: number
 }

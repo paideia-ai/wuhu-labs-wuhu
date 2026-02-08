@@ -47,9 +47,8 @@ type HistoryEntry =
   | { type: 'agent-block'; id: string; items: AgentBlockItem[]; startedAt: number; endedAt: number | null }
 
 /** "custom" entries include:
- *  - customType: "interruption" — user interrupted the agent
- *  - customType: "agent-start" — marks beginning of agent work (for duration calc)
- *  - customType: "agent-end" — marks end of agent work (for duration calc)
+ *  - customType: "interruption" — user interrupted the agent (ends the turn)
+ *  - customType: "agent-end" — marks end of agent work (ends the turn)
  */
 ```
 
@@ -108,7 +107,10 @@ On construction (or when `sendMessage` is called), the mock:
    - Emits corresponding tool results (immediately, as complete items).
 3. After all tool-call turns, emits a final assistant message (summary), also
    from the markdown pool.
-4. Emits an `agent-end` custom entry.
+4. Emits an `agent-end` custom entry to close the turn.
+
+No `agent-start` is emitted. The user message is the source of truth for when
+a turn begins.
 
 The constructor accepts a `style: 'anthropic' | 'openai'` option.
 
@@ -126,17 +128,16 @@ When emitting an assistant message (NOT reasoning summary), the mock:
 - If `isGenerating`, steer messages are **consumed after the current tool-call
   turn finishes**. All queued steers at that point are flushed into the
   history at once as user messages, and the agent continues working under the
-  new guidance in the **same logical turn**:
-  - No new `agent-start` is emitted.
-  - The eventual `agent-end` still measures from the original `agent-start`.
+  new guidance in the **same logical turn**.
 - Follow-up messages are consumed **after the agent finishes all work** for the
   current turn:
   - The current agent block is closed and an `agent-end` is emitted.
-  - Each follow-up starts a fresh turn with a new `agent-start` and agent
-    block.
-- `interrupt()` aborts the current generation, adds an "interruption" custom
-  entry, and **does not** emit an `agent-end`. Interrupted turns therefore
-  have no "Worked for" label.
+  - Each follow-up starts a fresh turn with a new agent block (no
+    `agent-start` — the user message is the turn boundary).
+- `interrupt()` aborts the current generation and adds an "interruption"
+  custom entry. Both `interruption` and `agent-end` are turn-ending markers.
+  Duration is computed from the user message timestamp to the turn-ending
+  marker timestamp.
 
 ### Referential stability
 
@@ -169,7 +170,7 @@ MockChatPage
 ├── Header (back link, style toggle, interrupt button)
 ├── HistoryList (memoized — only re-renders when history ref changes)
 │   ├── UserMessageEntry
-│   ├── CustomEntry (interruption, agent-start/end → duration label)
+│   ├── CustomEntry (interruption, agent-end → duration label)
 │   └── AgentBlockEntry (memoized when block is complete)
 │       └── ToolGroupDisplay (UI grouping of tool calls)
 ├── StreamingMessageDisplay (re-renders on every streaming tick)
@@ -230,30 +231,35 @@ use) but not rendered.
 
 ## 5. Duration Label
 
-Duration is computed from custom `agent-start` / `agent-end` entries, not from
-the agent block itself.
+Duration is computed from the user message that started the turn to the
+turn-ending marker (`agent-end` or `interruption`).
 
-For each `agent-end` entry in `history`, the UI:
+For each turn-ending entry in `history`, the UI:
 
-1. Walks backwards to find the most recent `agent-start`.
-2. Stops if it encounters another `agent-end` first (that end belongs to an
+1. Walks backwards to find the most recent `user-message`.
+2. Stops if it encounters another turn-ending marker first (that belongs to an
    earlier turn).
-3. If a matching `agent-start` is found, compute:
+3. If a matching `user-message` is found, compute:
 
 > Worked for X seconds
 
-where `X` is derived from `agent-end.timestamp - agent-start.timestamp`
+where `X` is derived from `turnEnd.timestamp - userMessage.timestamp`
 (formatted as `Ns` or `Nm Ns`).
 
 This means:
 
-- Steers and additional agent blocks between `agent-start` and `agent-end` are
-  treated as part of the **same** turn.
-- Multiple turns in a session are handled by the "stop at previous agent-end"
+- Steers and additional agent blocks between the user message and the
+  turn-ending marker are treated as part of the **same** turn.
+- Multiple turns in a session are handled by the "stop at previous turn-end"
   rule.
+- Both `agent-end` and `interruption` are turn-ending markers, so duration
+  labels are shown for interrupted turns too.
 
-If interrupted (no `agent-end` for a given `agent-start`), **no duration label
-is shown** for that work.
+To differentiate between a **fresh** prompt and a **follow-up**:
+- A user message is a **follow-up** if it is preceded (walking backwards) by
+  a turn-ending marker (`agent-end` or `interruption`) before any other
+  user message.
+- Otherwise it is **fresh** (first message or continuation of the same turn).
 
 ---
 
@@ -334,8 +340,8 @@ In `_index.tsx`, add a link:
 ## 11. History Projection / View Model
 
 The raw `SessionSnapshot.history` is a low-level event log. The UI should not
-have to reason directly about `agent-start` / `agent-end` / `interruption`
-entries or how steers and follow-ups are interleaved with tool calls.
+have to reason directly about `agent-end` / `interruption` entries or how
+steers and follow-ups are interleaved with tool calls.
 
 Instead, we define a projection layer that derives a richer view model from the
 raw history. The goals:
@@ -480,19 +486,25 @@ steer/follow-up queues. The projection uses the classification above to set
 
 ### 11.3 Turn boundaries
 
-Turns are defined using `agent-start`, `agent-end`, and `interruption` entries:
+Turns are delimited by user messages and turn-ending markers (`agent-end` or
+`interruption`). There is no `agent-start` entry.
 
 - A new turn begins when:
   - A `user-message` arrives and there is **no active turn**, or
-  - A `user-message` is classified as a **follow-up** after the previous turn
-    has already finished (i.e. we’ve seen `agent-end` for that turn).
+  - A `user-message` is classified as a **follow-up** (the previous turn has
+    already ended with a turn-ending marker).
 
 - A turn ends when:
-  - We see a matching `agent-end` → the last block’s `endReason = 'completed'`
-    and the turn’s `endedAt` is that timestamp.
-  - Or we see an `interruption` before any `agent-end` for this turn →
-    the last block’s `endReason = 'interrupted'` and the turn’s `endedAt` is
-    the interruption timestamp.
+  - We see an `agent-end` → the last block's `endReason = 'completed'`
+    and the turn's `endedAt` is that timestamp.
+  - Or we see an `interruption` → the last block's
+    `endReason = 'interrupted'` and the turn's `endedAt` is the interruption
+    timestamp.
+
+To distinguish **fresh** from **follow-up**: walk backwards from the user
+message. If a turn-ending marker (`agent-end` or `interruption`) is found
+before another user message, the prompt is a **follow-up**. Otherwise it is
+**fresh**.
 
 Steers **do not** end a turn. They may cause:
 
@@ -500,11 +512,11 @@ Steers **do not** end a turn. They may cause:
 - A new agent block to start under the **same** turn, continuing work with the
   new guidance from the steer message(s).
 
-Follow-ups **do** start a new turn, but only after the previous turn has ended
-with an `agent-end`. The transition between turns is:
+Follow-ups **do** start a new turn, but only after the previous turn has ended.
+The transition between turns is:
 
 - Turn N:
-  - ends with `agent-end` → last block `endReason = 'completed'`.
+  - ends with `agent-end` or `interruption`.
 - Turn N+1:
   - begins with a `user-message` classified as `PromptKind = 'followUp'`.
 
@@ -542,11 +554,11 @@ Block end reasons:
 
 The projection does **not** store a `workedForLabel` string. Instead:
 
-- Duration is derived from `agent-start` / `agent-end` custom entries as
-  described in section 5.
+- Duration is derived from the user message that started the turn to the
+  turn-ending marker (`agent-end` or `interruption`) as described in
+  section 5.
 - A helper (e.g. `getDurationLabel(history, endIndex)`) is used at render time
-  to compute `"Worked for X"` for the block/turn that ended at that
-  `agent-end`.
+  to compute `"Worked for X"` for the turn that ended at that marker.
 
 This keeps the projection purely structural (boundaries, reasons, relationships)
 and leaves formatting decisions to the UI.
