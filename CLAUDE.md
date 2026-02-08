@@ -1,8 +1,2 @@
-# CLAUDE.md
-
-Read AGENTS.md for full context.
-
-## Quick Start
-
-You're developing Wuhu. The Terragon codebase is at `../wuhu-terragon` - use it
-as reference. Notes are in `docs/`.
+1. Read AGENTS.md first.
+2. Do NOT update this file; update AGENTS.md instead.
