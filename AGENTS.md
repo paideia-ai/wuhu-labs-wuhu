@@ -15,77 +15,15 @@ See `notes/architecture-vibe.md` for full architecture discussion.
 - **Web UI**: https://wuhu.liu.ms
 - **API**: https://api.wuhu.liu.ms
 
-## Project Structure
+## Folder Instruction Files
 
-```
-.
-├── core/                    # Backend (Deno)
-│   ├── packages/
-│   │   ├── server/          # Hono API server
-│   │   ├── sandbox-daemon/  # Sandbox runtime
-│   │   └── prisma/          # Database client (@wuhu/prisma)
-│   ├── prisma/              # Prisma schema & config
-│   │   ├── schema/          # .prisma files
-│   │   └── prisma.config.ts
-│   ├── Dockerfile
-│   └── deno.json            # Workspace root
-├── web/                     # Frontend (Deno + React Router)
-│   ├── packages/
-│   │   └── app/             # React Router app
-│   └── Dockerfile
-├── deploy/                  # Kubernetes manifests
-│   ├── core.yaml
-│   └── web.yaml
-└── .github/workflows/
-    ├── ci.yml               # Lint, typecheck, tests
-    └── deploy.yml           # Build & deploy to k3s
-```
+Whenever you need to touch or reference a folder that has an `AGENTS.md`, read
+that file first. Also read `AGENTS.local.md` in that folder when present.
 
 ## Development Environment
 
 You're running in a self-hosted Terragon instance. The original Terragon product
 is dead - no commercial future, no data retrieval from the old hosted version.
-
-## Core Tasks (Deno)
-
-Run from `core/`:
-
-```bash
-deno task verify          # Typecheck + lint + tests
-deno task check           # Typecheck only
-deno task test            # Run tests
-deno task coverage        # Generate coverage report
-deno task coverage:check  # Fail if below threshold (default 80%)
-```
-
-Override coverage threshold: `COVERAGE_MIN=0.7 deno task coverage:check`
-
-## Prisma (Database)
-
-Prisma runs via Node (using `npx`) but generates a Deno-compatible client.
-
-Run from `core/`:
-
-```bash
-deno task prisma:gen      # Generate client to packages/prisma/generated/
-deno task prisma:push     # Push schema to database (dev)
-```
-
-Or directly from `core/prisma/`:
-
-```bash
-DATABASE_URL="postgresql://user@localhost/wuhu_dev" npx prisma generate
-DATABASE_URL="postgresql://user@localhost/wuhu_dev" npx prisma db push
-DATABASE_URL="postgresql://user@localhost/wuhu_dev" npx prisma migrate dev
-```
-
-The generated client lives at `core/packages/prisma/generated/` (gitignored).
-Import via `@wuhu/prisma`:
-
-```ts
-import { createPrismaClient } from '@wuhu/prisma'
-const prisma = createPrismaClient()
-```
 
 ## Docker
 
@@ -104,7 +42,7 @@ docker run --rm -e DATABASE_URL="postgresql://user@host.docker.internal/wuhu_dev
 ```
 
 The core Dockerfile uses a multi-stage build:
-1. **Node stage**: Runs `prisma generate` (Node 24)
+1. **Node stage**: dependency/install preparation (Node 24)
 2. **Build stage**: Deno install + typecheck
 3. **Production stage**: Deno runtime only (no Node)
 
@@ -135,9 +73,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on PRs and pushes to `main`.
 
 **Steps**:
 1. Setup Deno + Node 24
-2. Generate Prisma client
-3. Push schema to test database (postgres service container)
-4. Lint, typecheck, test for both `core/` and `web/`
+2. Lint, typecheck, test for both `core/` and `web/`
 
 The CI uses a postgres service container - no external database needed.
 
