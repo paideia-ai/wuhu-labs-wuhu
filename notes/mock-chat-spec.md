@@ -328,3 +328,225 @@ In `_index.tsx`, add a link:
 ```tsx
 <Link to="/mock-chat">Mock Agent Chat</Link>
 ```
+
+---
+
+## 11. History Projection / View Model
+
+The raw `SessionSnapshot.history` is a low-level event log. The UI should not
+have to reason directly about `agent-start` / `agent-end` / `interruption`
+entries or how steers and follow-ups are interleaved with tool calls.
+
+Instead, we define a projection layer that derives a richer view model from the
+raw history. The goals:
+
+- Make it trivial for React components to render:
+  - Turns (user prompt + agent work)
+  - Agent blocks (batches of tools + assistant messages)
+  - "Worked for X" labels
+  - Folded traces vs expanded traces
+- Support advanced behaviors:
+  - Only show extra details for the **last active** batch of bash calls.
+  - Collapse completed work under a "Worked for X minutes" summary.
+  - Treat **steer** and **follow-up** prompts differently while still working
+    with the real backend’s limitations.
+
+### 11.1 Types
+
+#### Block end reason
+
+```ts
+type BlockEndReason =
+  | 'completed'      // true agent-end
+  | 'interrupted'    // interrupted with no agent-end
+  | 'steered'        // block ended because steer(s) arrived
+  | 'followUpStart'  // block ended because a follow-up started a new turn
+```
+
+#### Agent block view
+
+```ts
+interface AgentBlockView {
+  /** id of the underlying agent-block HistoryEntry */
+  id: string
+
+  /** Millisecond timestamps, aligned with HistoryEntry timestamps */
+  startedAt: number
+  endedAt: number | null
+
+  /**
+   * Why this block stopped.
+   * - null → still streaming / active
+   * - 'completed' → saw an agent-end for this turn
+   * - 'interrupted' → saw an interruption with no agent-end
+   * - 'steered' → we stopped because steer message(s) arrived
+   * - 'followUpStart' → we stopped because a follow-up started a new turn
+   */
+  endReason: BlockEndReason | null
+
+  /**
+   * Tool/assistant items grouped for display.
+   * Derived via tool-grouping.ts (RenderBlock[]).
+   */
+  renderBlocks: RenderBlock[]
+
+  /**
+   * The id of the last assistant-message inside this block, if any.
+   * Used so we can render a "final answer" summary without double-rendering
+   * it from renderBlocks.
+   */
+  finalAssistantMessageId: string | null
+
+  /**
+   * True when this is the last agent block for its turn. Used for decisions
+   * like:
+   *   - show more details for the last execution block
+   *   - fold earlier blocks under a "Worked for X" summary
+   */
+  isLastBlockInTurn: boolean
+}
+```
+
+#### Turn view
+
+```ts
+type PromptKind = 'fresh' | 'followUp' | 'steer'
+
+interface TurnView {
+  /** Stable id for the turn (e.g. derived from the first user message id). */
+  id: string
+
+  /** When the turn started (timestamp of the first user message for this turn). */
+  startedAt: number
+
+  /**
+   * When the turn ended.
+   * - For completed turns: timestamp of the matching agent-end.
+   * - For interrupted turns: timestamp of the interruption.
+   * - For active turns: null.
+   */
+  endedAt: number | null
+
+  /** The originating user message for this turn. */
+  prompt: {
+    id: string
+    text: string
+    kind: PromptKind  // 'fresh', 'followUp', or 'steer'
+  }
+
+  /**
+   * Agent blocks belonging to this turn, in chronological order.
+   * There may be multiple blocks in a single turn when steers arrive mid-way.
+   */
+  blocks: AgentBlockView[]
+}
+```
+
+#### Projection result
+
+```ts
+interface MockChatProjection {
+  /** All turns in chronological order (completed + active). */
+  turns: TurnView[]
+
+  /** The currently-active turn, if any. Convenience alias for turns.at(-1) where endedAt == null. */
+  activeTurn: TurnView | null
+}
+```
+
+The projection is **pure**: given a `SessionSnapshot.history`, it produces a
+`MockChatProjection` without mutating inputs.
+
+### 11.2 Classification: steer vs follow-up
+
+The real backend cannot reliably tell whether a user message was manually
+entered vs queued, so the projection must infer **steer** vs **follow-up**
+based on context.
+
+Rule (for both the real backend and mock session):
+
+- Let `U` be a user message in the raw history.
+- Look at the **previous meaningful message**:
+  - If the previous message is an **assistant** message (final answer or
+    streaming), classify `U` as a **follow-up** (`PromptKind = 'followUp'`).
+  - If the previous message is a **tool result** (or otherwise clearly inside
+    the agent’s active tool-use phase), classify `U` as a **steer**
+    (`PromptKind = 'steer'`).
+- If there is no previous message (first turn), classify as `PromptKind = 'fresh'`.
+
+The mock session still exposes `queueMode: 'steer' | 'followUp'` and separate
+steer/follow-up queues. The projection uses the classification above to set
+`prompt.kind` so the UI behaves like it would with the real backend.
+
+### 11.3 Turn boundaries
+
+Turns are defined using `agent-start`, `agent-end`, and `interruption` entries:
+
+- A new turn begins when:
+  - A `user-message` arrives and there is **no active turn**, or
+  - A `user-message` is classified as a **follow-up** after the previous turn
+    has already finished (i.e. we’ve seen `agent-end` for that turn).
+
+- A turn ends when:
+  - We see a matching `agent-end` → the last block’s `endReason = 'completed'`
+    and the turn’s `endedAt` is that timestamp.
+  - Or we see an `interruption` before any `agent-end` for this turn →
+    the last block’s `endReason = 'interrupted'` and the turn’s `endedAt` is
+    the interruption timestamp.
+
+Steers **do not** end a turn. They may cause:
+
+- The current agent block to be marked with `endReason = 'steered'`.
+- A new agent block to start under the **same** turn, continuing work with the
+  new guidance from the steer message(s).
+
+Follow-ups **do** start a new turn, but only after the previous turn has ended
+with an `agent-end`. The transition between turns is:
+
+- Turn N:
+  - ends with `agent-end` → last block `endReason = 'completed'`.
+- Turn N+1:
+  - begins with a `user-message` classified as `PromptKind = 'followUp'`.
+
+### 11.4 Blocks inside a turn
+
+Within a turn:
+
+- Each `agent-block` history entry becomes one `AgentBlockView`.
+- Exactly one block per turn can be active (where `endedAt === null` and
+  `endReason === null`).
+- `isLastBlockInTurn` is `true` for the last block of the turn.
+
+Block end reasons:
+
+- `completed`:
+  - A completed turn where an `agent-end` was observed.
+  - The block that was active when the agent finished gets
+    `endReason = 'completed'`.
+- `interrupted`:
+  - No `agent-end` was seen for this turn, but an `interruption` custom entry
+    was emitted.
+  - The block that was active at interruption time gets
+    `endReason = 'interrupted'`.
+- `steered`:
+  - During a running turn, one or more steer messages arrived.
+  - The block that was active when we flushed those steers into history gets
+    `endReason = 'steered'`, and a new block is opened (same turn) for the
+    continued work under the new guidance.
+- `followUpStart`:
+  - When we want to explicitly mark that a block ended because the next
+    **turn** started from a follow-up (optional; can be omitted if not used
+    by the UI).
+
+### 11.5 Worked-for label in the projection
+
+The projection does **not** store a `workedForLabel` string. Instead:
+
+- Duration is derived from `agent-start` / `agent-end` custom entries as
+  described in section 5.
+- A helper (e.g. `getDurationLabel(history, endIndex)`) is used at render time
+  to compute `"Worked for X"` for the block/turn that ended at that
+  `agent-end`.
+
+This keeps the projection purely structural (boundaries, reasons, relationships)
+and leaves formatting decisions to the UI.
