@@ -4,6 +4,7 @@ import { Button } from '@wuhu/shadcn/components/button'
 import { Badge } from '@wuhu/shadcn/components/badge'
 import { useMockSession } from '~/lib/mock-chat/use-mock-session.ts'
 import type { AgentStyle } from '~/lib/mock-chat/types.ts'
+import { projectMockChat } from '~/lib/mock-chat/projection.ts'
 import { HistoryList } from '~/lib/mock-chat/components/history-list.tsx'
 import { StreamingMessageDisplay } from '~/lib/mock-chat/components/streaming-message.tsx'
 import { InputArea } from '~/lib/mock-chat/components/input-area.tsx'
@@ -19,6 +20,7 @@ export default function MockChatPage() {
   const { snapshot, sendMessage, interrupt, setQueueMode } = useMockSession(
     style,
   )
+  const projection = projectMockChat(snapshot)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   // Auto-scroll on new content
@@ -65,13 +67,13 @@ export default function MockChatPage() {
         {/* Chat area */}
         <section className='flex min-h-0 flex-col overflow-hidden rounded-2xl border bg-background/90 shadow-sm'>
           <div className='flex-1 space-y-4 overflow-auto px-4 py-4'>
-            {snapshot.history.length === 0 && !snapshot.streamingMessage && (
+            {projection.turns.length === 0 && !snapshot.streamingMessage && (
               <div className='rounded-xl border border-dashed p-4 text-sm text-muted-foreground'>
                 Send a message to start the mock agent conversation.
               </div>
             )}
 
-            <HistoryList history={snapshot.history} />
+            <HistoryList projection={projection} />
 
             {snapshot.streamingMessage && (
               <StreamingMessageDisplay message={snapshot.streamingMessage} />

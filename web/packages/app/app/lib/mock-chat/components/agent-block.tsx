@@ -1,12 +1,8 @@
 import { memo } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { AgentBlockEntry } from '../types.ts'
-import {
-  groupAgentBlockItems,
-  type RenderBlock,
-  type ToolGroup,
-} from '../tool-grouping.ts'
+import type { AgentBlockView } from '../projection.ts'
+import { type RenderBlock, type ToolGroup } from '../tool-grouping.ts'
 
 function categoryLabel(category: ToolGroup['category']): string {
   switch (category) {
@@ -81,8 +77,8 @@ function RenderBlockDisplay({ block }: { block: RenderBlock }) {
   return null
 }
 
-function AgentBlockInner({ block }: { block: AgentBlockEntry }) {
-  const renderBlocks = groupAgentBlockItems(block.items)
+function AgentBlockInner({ block }: { block: AgentBlockView }) {
+  const renderBlocks = block.renderBlocks
 
   if (renderBlocks.length === 0) {
     return (

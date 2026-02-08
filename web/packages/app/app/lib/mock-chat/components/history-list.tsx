@@ -1,7 +1,6 @@
 import { memo } from 'react'
-import type { HistoryEntry } from '../types.ts'
 import { AgentBlock } from './agent-block.tsx'
-import { getDurationLabel } from '../history-projection.ts'
+import type { MockChatProjection } from '../projection.ts'
 
 function UserMessageBubble({ text }: { text: string }) {
   return (
@@ -27,31 +26,47 @@ function DurationLabel({ label }: { label: string }) {
   return <p className='text-center text-xs text-muted-foreground'>{label}</p>
 }
 
-function HistoryListInner({ history }: { history: HistoryEntry[] }) {
+function formatDuration(ms: number): string {
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return `${minutes}m ${remainingSeconds}s`
+}
+
+function HistoryListInner(
+  { projection }: { projection: MockChatProjection },
+) {
   return (
     <div className='space-y-4'>
-      {history.map((entry, index) => {
-        switch (entry.type) {
-          case 'user-message':
-            return <UserMessageBubble key={entry.id} text={entry.text} />
+      {projection.turns.map((turn) => {
+        const { prompt, blocks, startedAt, endedAt } = turn
+        const showDuration = endedAt !== null &&
+          blocks.length > 0 &&
+          blocks[blocks.length - 1]?.endReason === 'completed'
 
-          case 'custom':
-            if (entry.customType === 'interruption') {
-              return <InterruptionBadge key={entry.id} />
-            }
-            // agent-start and agent-end are invisible — but agent-end
-            // triggers a duration label for the turn
-            if (entry.customType === 'agent-end') {
-              const label = getDurationLabel(history, index)
-              if (label) {
-                return <DurationLabel key={entry.id} label={label} />
-              }
-            }
-            return null
+        return (
+          <div key={turn.id} className='space-y-3'>
+            <UserMessageBubble text={prompt.text} />
 
-          case 'agent-block':
-            return <AgentBlock key={entry.id} block={entry} />
-        }
+            {blocks.map((block) => (
+              <div key={block.id} className='space-y-2'>
+                <AgentBlock block={block} />
+
+                {block.endReason === 'interrupted' && <InterruptionBadge />}
+
+                {block.isLastBlockInTurn && showDuration && endedAt !== null &&
+                  (
+                    <DurationLabel
+                      label={`Worked for ${
+                        formatDuration(endedAt - startedAt)
+                      }`}
+                    />
+                  )}
+              </div>
+            ))}
+          </div>
+        )
       })}
     </div>
   )
