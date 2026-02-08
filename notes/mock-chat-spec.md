@@ -255,11 +255,12 @@ This means:
 - Both `agent-end` and `interruption` are turn-ending markers, so duration
   labels are shown for interrupted turns too.
 
-To differentiate between a **fresh** prompt and a **follow-up**:
-- A user message is a **follow-up** if it is preceded (walking backwards) by
-  a turn-ending marker (`agent-end` or `interruption`) before any other
-  user message.
-- Otherwise it is **fresh** (first message or continuation of the same turn).
+To classify a user message's `PromptKind`, walk backwards from it:
+- **Turn-end found first** (`agent-end` or `interruption`) → `followUp`
+  (previous turn finished, this starts a new one).
+- **Another user-message found first** (no turn-end in between) → `steer`
+  (same turn, agent is still working).
+- **Nothing found** (start of history) → `fresh` (very first prompt).
 
 ---
 
@@ -501,10 +502,10 @@ Turns are delimited by user messages and turn-ending markers (`agent-end` or
     `endReason = 'interrupted'` and the turn's `endedAt` is the interruption
     timestamp.
 
-To distinguish **fresh** from **follow-up**: walk backwards from the user
-message. If a turn-ending marker (`agent-end` or `interruption`) is found
-before another user message, the prompt is a **follow-up**. Otherwise it is
-**fresh**.
+To classify a user message, walk backwards:
+- **Turn-end found first** → `followUp` (new turn).
+- **Another user-message found first** → `steer` (same turn).
+- **Nothing found** → `fresh` (first prompt).
 
 Steers **do not** end a turn. They may cause:
 
