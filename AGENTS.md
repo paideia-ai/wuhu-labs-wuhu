@@ -8,138 +8,59 @@ a session log collector and query system.
 Core value: collect logs from Claude Code, Codex, OpenCode, etc. Provide APIs so
 agents can query them. Git blame a line → find the session → understand the why.
 
-See `notes/architecture-vibe.md` for full architecture discussion.
+Quick primer: `docs/what-is-a-coding-agent.md`.
 
-## Deployed URLs
+## Status
 
-- **Web UI**: https://wuhu.liu.ms
-- **API**: https://api.wuhu.liu.ms
+This repo is the Swift pivot of Wuhu. It’s currently a Swift Package with:
+
+- `PiAI`: a unified LLM client library (ported from `pi-mono`’s `pi-ai`)
+- `wuhu`: a small CLI that demonstrates `PiAI` providers
 
 ## Project Structure
 
 ```
 .
-├── core/                    # Backend (Deno)
-│   ├── packages/
-│   │   ├── server/          # Hono API server
-│   │   ├── sandbox-daemon/  # Sandbox runtime
-│   │   └── prisma/          # Database client (@wuhu/prisma)
-│   ├── prisma/              # Prisma schema & config
-│   │   ├── schema/          # .prisma files
-│   │   └── prisma.config.ts
-│   ├── Dockerfile
-│   └── deno.json            # Workspace root
-├── web/                     # Frontend (Deno + React Router)
-│   ├── packages/
-│   │   └── app/             # React Router app
-│   └── Dockerfile
-├── deploy/                  # Kubernetes manifests
-│   ├── core.yaml
-│   └── web.yaml
+├── Package.swift
+├── Sources/
+│   ├── PiAI/                # Unified LLM API (OpenAI, OpenAI Codex, Anthropic)
+│   └── wuhu/                # CLI binary demonstrating PiAI usage
+├── Tests/
+│   └── PiAITests/           # Provider + SSE parsing tests (swift-testing)
+├── docs/
+│   └── what-is-a-coding-agent.md
 └── .github/workflows/
-    ├── ci.yml               # Lint, typecheck, tests
-    └── deploy.yml           # Build & deploy to k3s
+    └── ci.yml               # SwiftFormat + build + tests
 ```
 
-## Development Environment
+## Local Dev
 
-You're running in a self-hosted Terragon instance. The original Terragon product
-is dead - no commercial future, no data retrieval from the old hosted version.
+Prereqs:
 
-## Core Tasks (Deno)
+- Swift 6.2 toolchain
 
-Run from `core/`:
+Common commands (repo root):
 
 ```bash
-deno task verify          # Typecheck + lint + tests
-deno task check           # Typecheck only
-deno task test            # Run tests
-deno task coverage        # Generate coverage report
-deno task coverage:check  # Fail if below threshold (default 80%)
+swift test
+swift run wuhu --help
+swift run wuhu openai "Say hello"
+swift run wuhu anthropic "Say hello"
 ```
 
-Override coverage threshold: `COVERAGE_MIN=0.7 deno task coverage:check`
-
-## Prisma (Database)
-
-Prisma runs via Node (using `npx`) but generates a Deno-compatible client.
-
-Run from `core/`:
+Formatting:
 
 ```bash
-deno task prisma:gen      # Generate client to packages/prisma/generated/
-deno task prisma:push     # Push schema to database (dev)
+swift package --allow-writing-to-package-directory swiftformat
+swift package --allow-writing-to-package-directory swiftformat --lint .
 ```
 
-Or directly from `core/prisma/`:
+Environment variables:
 
-```bash
-DATABASE_URL="postgresql://user@localhost/wuhu_dev" npx prisma generate
-DATABASE_URL="postgresql://user@localhost/wuhu_dev" npx prisma db push
-DATABASE_URL="postgresql://user@localhost/wuhu_dev" npx prisma migrate dev
-```
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
 
-The generated client lives at `core/packages/prisma/generated/` (gitignored).
-Import via `@wuhu/prisma`:
-
-```ts
-import { createPrismaClient } from '@wuhu/prisma'
-const prisma = createPrismaClient()
-```
-
-## Docker
-
-Build images locally:
-
-```bash
-docker build -t wuhu-core:test ./core
-docker build -t wuhu-web:test ./web
-```
-
-Run locally (needs postgres):
-
-```bash
-docker run --rm -e DATABASE_URL="postgresql://user@host.docker.internal/wuhu_dev" \
-  -p 3000:3000 wuhu-core:test
-```
-
-The core Dockerfile uses a multi-stage build:
-1. **Node stage**: Runs `prisma generate` (Node 24)
-2. **Build stage**: Deno install + typecheck
-3. **Production stage**: Deno runtime only (no Node)
-
-## Deployment
-
-Deployed to a self-hosted k3s cluster via GitHub Actions (`.github/workflows/deploy.yml`).
-
-**Trigger**: Push to `main` or manual `workflow_dispatch`
-
-**Flow**:
-1. Build Docker image with commit SHA tag
-2. Import to k3s containerd
-3. Apply k8s manifests from `deploy/`
-4. Rolling update deployment
-
-**Monitor**:
-
-```bash
-kubectl get pods
-kubectl get deployments
-kubectl logs -l app=core
-kubectl describe pod -l app=core
-```
-
-## CI
-
-GitHub Actions (`.github/workflows/ci.yml`) runs on PRs and pushes to `main`.
-
-**Steps**:
-1. Setup Deno + Node 24
-2. Generate Prisma client
-3. Push schema to test database (postgres service container)
-4. Lint, typecheck, test for both `core/` and `web/`
-
-The CI uses a postgres service container - no external database needed.
+If keys aren’t set in the environment, the `wuhu` CLI also tries to load a local `.env`.
 
 ## Reference Paths
 
@@ -189,8 +110,4 @@ for details.
 
 ## Notes
 
-Architecture discussions live in `notes/`:
-
-- `architecture-vibe.md` - overall system design
-- `session-logs-component.md` - first component spec
-- `axiia-website.md` - reference project notes
+General documentation lives in `docs/`.

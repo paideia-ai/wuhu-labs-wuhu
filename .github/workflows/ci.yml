@@ -1,119 +1,47 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-      - 'features/*'
-    paths:
-      - 'core/**'
-      - 'web/**'
-      - '.github/workflows/ci.yml'
   pull_request:
+  push:
     branches: [main]
-    paths:
-      - 'core/**'
-      - 'web/**'
-      - '.github/workflows/ci.yml'
 
 jobs:
-  ci:
+  test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: wuhu_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wuhu_test
-      S3_ENDPOINT: http://127.0.0.1:9000
-      S3_REGION: us-east-1
-      S3_BUCKET: wuhu-raw-logs-ci
-      S3_ACCESS_KEY_ID: minio
-      S3_SECRET_ACCESS_KEY: miniosecret
-      S3_FORCE_PATH_STYLE: "true"
+    # Faster Swift CI: use the official Swift toolchain container + caching.
+    container:
+      image: swift:6.2-noble
 
     steps:
-      - name: Setup repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
+      - name: Install build deps
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git zstd
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
         with:
-          cache: true
-          deno-version: v2.6.8
+          path: |
+            .build
+            .swiftpm
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
 
-      - name: Start Minio
-        run: |
-          docker run -d --name wuhu-minio \
-            -p 9000:9000 \
-            -e MINIO_ROOT_USER=minio \
-            -e MINIO_ROOT_PASSWORD=miniosecret \
-            minio/minio:latest server /data --console-address ":9001"
+      - name: Resolve
+        run: swift package resolve
 
-      - name: Wait for Minio
-        run: |
-          for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null; then
-              echo "minio ready"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "minio not ready" >&2
-          exit 1
+      - name: SwiftFormat (lint)
+        run: swift package --allow-writing-to-package-directory swiftformat --lint .
 
-      # Core checks
-      - name: Check formatting (core)
-        run: deno fmt --check
-        working-directory: core
+      - name: Build tests
+        run: swift build --build-tests
 
-      - name: Check lint (core)
-        run: deno lint
-        working-directory: core
-
-      - name: Check types (core)
-        run: deno task check
-        working-directory: core
-
-      - name: Run tests (core)
-        run: deno task test
-        working-directory: core
-
-      - name: Check coverage minimum (core)
-        run: deno task coverage:check
-        working-directory: core
-
-      # Web checks (excludes sandbox-daemon-ui which is not in deno workspace)
-      - name: Install dependencies (web)
-        run: deno install
-        working-directory: web
-
-      - name: Check formatting (web)
-        run: deno fmt --check packages/app packages/react-router-deno
-        working-directory: web
-
-      - name: Check lint (web)
-        run: deno lint packages/app packages/react-router-deno
-        working-directory: web
-
-      - name: Check types (web)
-        run: cd packages/app && deno task check
-        working-directory: web
-
-      - name: Run tests (web)
-        run: deno task test
-        working-directory: web
+      - name: Run tests
+        run: swift test --skip-build
