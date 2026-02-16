@@ -4,11 +4,14 @@ set -e
 # Capture staged files before formatting
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
 
-deno fmt core
-deno fmt web
+if [ -d core ]; then
+  deno fmt core
+fi
+if [ -d web ]; then
+  deno fmt web
+fi
 
 # Re-stage only what was previously staged
 if [ -n "$STAGED_FILES" ]; then
   git add $STAGED_FILES
 fi
-
