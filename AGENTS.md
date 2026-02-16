@@ -1,46 +1,103 @@
-Meta rule
+# AGENTS.md
 
-- By AGENTS.md, we refer to both AGENTS.md and AGENTS.local.md
-- No Markdown header in AGENTS.md, only paragraph and lists
-- Concise over grammar
-- When working in a subfolder with AGENTS.md, read them if present
+## What is Wuhu
 
-Project
+Wuhu is a data layer + API for understanding coding agents. Not a task runner -
+a session log collector and query system.
 
-- Wuhu is a self-hosted platform for managing/running background coding agents in sandboxes
-- Coding agents are described in docs/what-are-coding-agents.md
+Core value: collect logs from Claude Code, Codex, OpenCode, etc. Provide APIs so
+agents can query them. Git blame a line → find the session → understand the why.
 
-Folders
+Quick primer: `docs/what-is-a-coding-agent.md`.
 
-- core: workspace for backend and sandboxes
-- web: workspace for frontend UI
-- deploy: k8s files for deployment
-- docs: project-wide docs, each workspace/package can have its own docs
+## Status
 
-Deno and NodeJS
+This repo is the Swift pivot of Wuhu. It’s currently a Swift Package with:
 
-- We only use Deno
-  - Existing NodeJS usage is okay
-  - No new NodeJS usage
-  - When review, always flag new NodeJS usage
-- When adding/removing packages, use Deno cli, no manual deno.json/package.json edit
-    - Do not specify package version manually, prefer latest whenever possible
-- core and web are two different Deno workspaces
-  - core: proper Deno, no node_modules, no package.json
-  - web: with npm compat, nodeModulesDir set to auto, use package.json when needed
+- `PiAI`: a unified LLM client library (ported from `pi-mono`’s `pi-ai`)
+- `wuhu`: a small CLI that demonstrates `PiAI` providers
 
-Git
+## Project Structure
 
-- Always use squash merge to merge into main
-- When asked for a feature/bugfix
-  - Always create a new branch
-  - Do it end-to-end, do not stop midway
-  - Commit as you go
-  - Perform local validations
-  - Create a PR, make it green
-    - If a PR is red, try reproduce issue locally; fix and verify locally before push again
-  - Ask human to review
-- Exceptions to above:
-  - You are asked to do it interactively
-  - Human just wants to chat/discuss
-  - Repo has dirty work when you started
+Never add a “project structure diagram” (tree listing) to this file. It always drifts from reality.
+
+If you need to understand the current layout, inspect the repo directly (or use `Package.swift` / `swift package describe` as the source of truth).
+
+## Local Dev
+
+Prereqs:
+
+- Swift 6.2 toolchain
+
+Common commands (repo root):
+
+```bash
+swift test
+swift run wuhu --help
+swift run wuhu openai "Say hello"
+swift run wuhu anthropic "Say hello"
+```
+
+Formatting:
+
+```bash
+swift package --allow-writing-to-package-directory swiftformat
+swift package --allow-writing-to-package-directory swiftformat --lint .
+```
+
+Environment variables:
+
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+
+For local manual testing, `wuhu` loads API keys from its server config. Check whether `~/.wuhu` exists; if it does, assume it has the keys and use that (don’t rely on a local `.env`).
+
+WuhuApp / XcodeGen:
+
+- `WuhuApp.xcodeproj` is generated, not source-of-truth. Source-of-truth is `WuhuApp/project.yml`.
+- Before running any Xcode/iOS command that expects the project file (`xcodebuild`, opening the project, TestFlight scripts), check whether `WuhuApp/WuhuApp.xcodeproj` exists.
+- If it does not exist, run `cd WuhuApp && xcodegen generate` first.
+
+## Workspace + Issues
+
+This project manages issues in a dedicated workspace repo: `wuhu-labs/wuhu-workspace`.
+
+When working in this repo, clone any related repos you need as siblings next to this repo (same parent directory). Example: clone `wuhu-workspace` to `../wuhu-workspace`.
+
+Common sibling repos (clone on demand, next to this repo):
+
+- `../wuhu-workspace` (issue tracker + project management; issues are `WUHU-####`)
+- `../wuhu` (main Wuhu repo)
+- `../wuhu-terragon` (reference implementations and patterns)
+- `../pi-mono` (reference harness + model/provider lists)
+- `../codex` (OpenAI Codex repo, for integration experiments)
+- `../axiia-website` (reference patterns)
+
+Starting new work:
+
+- Clone sibling repos on demand (only what you need).
+- Refresh a sibling repo with `git pull` only if you are on its default branch (usually `main`) and the working tree is clean (no local edits). If not, stop and ask for human intervention.
+
+## Issue Workflow
+
+Issues use the format `WUHU-####` (four digits) and live in `../wuhu-workspace/issues/*.md`. If you see “Fix WUHU-0001”, assume it refers to an issue in `wuhu-workspace` (not GitHub Issues).
+
+When you are assigned to work on a `WUHU-####` issue, you must create a new branch:
+
+1. If you are already on a new branch that has no changes and has no new commits ahead of `main`, assume that branch is for you.
+2. If you are in a dirty place (uncommitted changes), stop and ask for human intervention.
+3. If the current branch (either you created or already present) is behind `origin/main`, bring it up to the latest `main` before you start your work.
+4. After you finish your work and perform validations, create a PR and make sure all checks pass before you finish your work.
+
+## Notes
+
+General documentation lives in `docs/`.
+
+## Collaboration
+
+When the user is interactively asking questions while reviewing code:
+
+- Treat the user’s questions/concerns as likely-valid signals, not as “user error”.
+- Take a neutral stance: verify by inspecting the repo before concluding who’s right.
+- Correct the user only when there’s a clear factual mismatch, and cite the exact file/symbol you’re relying on.
+- Assume parts of the codebase may be sloppy/LLM-generated; prioritize clarity and maintainability over defending the status quo.
